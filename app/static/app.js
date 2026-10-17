@@ -4,12 +4,19 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const DIFF = { 1: "Easy", 2: "Medium", 3: "Hard" };
 const DRAFT_KEY = "worksheet-draft-v1";
+const COURSE_KEY = "worksheet-course-filter";
+const COURSE_SHORT = { alg1: "Algebra 1", geo: "Geometry", alg2: "Algebra 2", precalc: "Precalc", calc: "Calculus",
+  conceptual: "Conceptual", ap1: "AP Physics 1" };
+const LEVEL_LETTER = { 1: "E", 2: "M", 3: "H" };
+// Section defaults when a topic is added from a course's view of the catalog.
+const COURSE_DEFAULTS = { conceptual: { g: 10, nice: true } };
 
 const state = {
   topics: [],
   topicById: {},
   settings: {},
-  subjectFilter: "all",
+  courses: [],
+  courseFilter: "all",
   sheet: null, // { id?, title, instructions, seed, sections: [{ config, problems, error }] }
 };
 
@@ -88,26 +95,54 @@ function showView(name) {
 
 // ------------------------------------------------------------------ topic catalog
 
+function renderCourseChips() {
+  const wrap = $("#course-filter");
+  const chips = [["all", "All"], ...state.courses.map((c) => [c.id, COURSE_SHORT[c.id] || c.name])];
+  wrap.replaceChildren(...chips.map(([id, label]) => el("button", {
+    class: `chip ${state.courseFilter === id ? "active" : ""}`,
+    title: id === "all" ? "Every topic" : state.courses.find((c) => c.id === id).name,
+    onclick: () => {
+      state.courseFilter = id;
+      try { localStorage.setItem(COURSE_KEY, id); } catch { /* storage unavailable */ }
+      renderCourseChips();
+      renderCatalog();
+    },
+  }, label)));
+}
+
 function renderCatalog() {
   const q = $("#topic-search").value.trim().toLowerCase();
+  const course = state.courseFilter;
   const list = $("#topic-list");
   list.replaceChildren();
-  let lastCat = "";
-  const shown = state.topics.filter((t) =>
-    (state.subjectFilter === "all" || t.subject === state.subjectFilter) &&
-    (!q || `${t.name} ${t.description} ${t.category}`.toLowerCase().includes(q)));
+  const shown = state.topics.filter((t) => (course === "all" || t.courses.includes(course)) &&
+    (!q || [t.name, t.description, t.category, ...t.skills.map((s) => s.label)].join(" ").toLowerCase().includes(q)));
+  // Group by unit, in order of first appearance (and by subject in the all-courses view).
+  const groups = new Map();
   for (const t of shown) {
-    const cat = `${t.subject}|${t.category}`;
-    if (cat !== lastCat) {
-      list.append(el("div", { class: "cat-head" },
-        el("span", { class: "subj" }, t.subject === "math" ? "Math" : "Physics"), "·", t.category));
-      lastCat = cat;
+    const key = course === "all" ? `${t.subject}|${t.category}` : t.category;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+  // In a course view, units follow the course's teaching order.
+  const units = state.courses.find((c) => c.id === course)?.units || [];
+  const rank = (key) => (units.includes(key) ? units.indexOf(key) : units.length);
+  const ordered = [...groups].sort(([a], [b]) => rank(a) - rank(b));
+  for (const [, topics] of ordered) {
+    const t0 = topics[0];
+    list.append(el("div", { class: "cat-head" },
+      course === "all" ? el("span", { class: "subj" }, t0.subject === "math" ? "Math" : "Physics") : null,
+      course === "all" ? "·" : null, t0.category));
+    for (const t of topics) {
+      list.append(el("button", {
+        class: "topic", title: `Add a "${t.name}" section`,
+        onclick: (ev) => { addSection({ subject: t.subject, topic: t.id, ...COURSE_DEFAULTS[course] });
+          ev.currentTarget.classList.add("flash");
+          setTimeout(() => ev.currentTarget?.classList.remove("flash"), 600); },
+      }, el("span", { class: "name" }, t.name), el("span", { class: "desc" }, t.description),
+      course === "all" ? el("span", { class: "courses" }, t.courses.map((c) => COURSE_SHORT[c]).join(" · ")) : null,
+      el("span", { class: "add" }, "+")));
     }
-    list.append(el("button", {
-      class: "topic", title: `Add a "${t.name}" section`,
-      onclick: (ev) => { addSection({ subject: t.subject, topic: t.id }); ev.currentTarget.classList.add("flash");
-        setTimeout(() => ev.currentTarget?.classList.remove("flash"), 600); },
-    }, el("span", { class: "name" }, t.name), el("span", { class: "desc" }, t.description), el("span", { class: "add" }, "+")));
   }
   if (!shown.length) list.append(el("p", { class: "hint" }, "No matching topics — add it as a custom AI topic below."));
 }
@@ -117,7 +152,7 @@ function renderCatalog() {
 function addSection(partial) {
   const cfg = {
     title: "", subject: "math", topic: "", custom_topic: "", count: 5, difficulty: 2,
-    source: "builtin", ai_prompt: "", g: null, nice: null, ...partial,
+    source: "builtin", ai_prompt: "", skills: null, g: null, nice: null, answer_form: null, places: null, ...partial,
   };
   if (cfg.topic === "custom") cfg.source = "ai";
   state.sheet.sections.push({ config: cfg, problems: [], error: "" });
@@ -150,6 +185,53 @@ function seg(options, value, onpick, extraCls = "") {
   return s;
 }
 
+/** The difficulty level used for a topic: the requested one, else the closest (harder on ties). */
+function nearestLevel(levels, d) {
+  return [...levels].sort((a, b) => Math.abs(a - d) - Math.abs(b - d) || b - a)[0];
+}
+
+/** Skill ids a section will draw from: its chosen skills, else every skill at the difficulty. */
+function effectiveSkills(cfg, t) {
+  if (cfg.skills?.length) return new Set(cfg.skills);
+  const lv = nearestLevel(t.levels, cfg.difficulty);
+  return new Set(t.skills.filter((s) => s.levels.includes(lv)).map((s) => s.id));
+}
+
+function skillPicker(cfg, t, update) {
+  const active = effectiveSkills(cfg, t);
+  const auto = effectiveSkills({ ...cfg, skills: null }, t);
+  const toggle = (id) => {
+    const next = new Set(active);
+    next.has(id) ? next.delete(id) : next.add(id);
+    const ids = t.skills.map((s) => s.id).filter((s) => next.has(s));
+    const same = ids.length === auto.size && ids.every((s) => auto.has(s));
+    update({ skills: ids.length && !same ? ids : null });
+  };
+  const chips = t.skills.map((s) => el("button", {
+    type: "button", class: `chip skill ${active.has(s.id) ? "active" : ""}`,
+    title: `${s.label} — ${s.levels.map((l) => DIFF[l]).join(", ")}`,
+    onclick: () => toggle(s.id),
+  }, s.label, el("span", { class: "lv" }, s.levels.map((l) => LEVEL_LETTER[l]).join(""))));
+  const status = cfg.skills?.length
+    ? el("span", { class: "hint" }, "custom mix · ", el("a", { href: "#", onclick: (e) => { e.preventDefault(); update({ skills: null }); } }, "reset"))
+    : el("span", { class: "hint" }, `all ${DIFF[cfg.difficulty].toLowerCase()} skills`);
+  return el("div", { class: "skills-field" },
+    el("div", { class: "skills-head" }, el("span", {}, "Skills"), status),
+    el("div", { class: "chips skills" }, ...chips));
+}
+
+function answerOptions(cfg, t, update) {
+  const form = cfg.answer_form ?? state.settings.math_answer_form;
+  const places = cfg.places ?? state.settings.math_places;
+  const showForm = !t || t.exact_forms, showRound = (!t || t.rounding) && !(showForm && form === "exact");
+  if (!showForm && !showRound) return null;
+  return el("div", { class: "grid answer-opts" },
+    showForm ? el("label", { title: "Exact answers use π and simplest radical form" }, "Answers",
+      seg([["exact", "Exact"], ["both", "Both"], ["decimal", "Decimal"]], form, (v) => update({ answer_form: v }))) : null,
+    showRound ? el("label", { title: "Decimal answers are rounded to this place" }, "Round to",
+      seg([[0, "1"], [1, "0.1"], [2, "0.01"], [3, "0.001"]], places, (v) => update({ places: v }))) : null);
+}
+
 function renderSections() {
   const wrap = $("#sections");
   wrap.replaceChildren();
@@ -179,7 +261,7 @@ function renderSections() {
     const card = el("div", { class: "section-card" },
       el("div", { class: "top" },
         el("span", { class: "num" }, `${i + 1}`),
-        topicSelect(cfg, (e) => { sec.problems = []; sec.error = ""; update({ topic: e.target.value, title: "" }, true); }),
+        topicSelect(cfg, (e) => { sec.problems = []; sec.error = ""; update({ topic: e.target.value, title: "", skills: null }, true); }),
         el("button", { class: "btn icon small", title: "Move up", onclick: () => move(-1), disabled: i === 0 }, "↑"),
         el("button", { class: "btn icon small", title: "Move down", onclick: () => move(1), disabled: i === secs.length - 1 }, "↓"),
         el("button", { class: "btn icon small danger", title: "Remove section",
@@ -205,12 +287,18 @@ function renderSections() {
           el("input", { type: "number", min: 1, max: 50, value: cfg.count,
             onchange: (e) => update({ count: Math.max(1, Math.min(50, Number(e.target.value) || 1)) }) })),
         el("label", {}, "Difficulty",
-          seg([[1, "Easy"], [2, "Medium"], [3, "Hard"]], cfg.difficulty, (v) => update({ difficulty: v })))),
+          seg([[1, "Easy"], [2, "Medium"], [3, "Hard"]], cfg.difficulty, (v) => update({ difficulty: v, skills: null })))),
       el("label", {}, "Source",
         cfg.topic === "custom"
           ? el("span", { class: "hint" }, "Custom topics are written by AI (Ollama).")
           : seg([["builtin", "Built-in (exact)"], ["ai", "✨ AI (Ollama)", "ai"]], cfg.source, (v) => update({ source: v }))),
     );
+    const topicMeta = state.topicById[cfg.topic];
+    if (topicMeta && topicMeta.skills.length > 1) card.append(skillPicker(cfg, topicMeta, update));
+    if (cfg.subject === "math" && (cfg.source === "ai" || topicMeta)) {
+      const opts = answerOptions(cfg, cfg.source === "ai" ? null : topicMeta, update);
+      if (opts) card.append(opts);
+    }
     if (cfg.subject === "physics") {
       // null = follow the Setup page default
       const g = cfg.g ?? state.settings.physics_g, nice = cfg.nice ?? state.settings.physics_nice;
@@ -501,7 +589,7 @@ async function saveSettings(ev) {
   for (const input of f.elements) {
     if (!input.name) continue;
     if (input.type === "checkbox") body[input.name] = input.checked;
-    else if (input.type === "number" || ["columns", "physics_g"].includes(input.name)) body[input.name] = Number(input.value);
+    else if (input.type === "number" || ["columns", "physics_g", "math_places"].includes(input.name)) body[input.name] = Number(input.value);
     else body[input.name] = input.value;
   }
   try {
@@ -518,7 +606,11 @@ async function saveSettings(ev) {
 
 async function boot() {
   document.head.append(el("style", { id: "page-style" }));
-  const [topics, settings, session] = await Promise.all([api("/api/topics"), api("/api/settings"), api("/api/session")]);
+  const [topics, settings, session, courses] = await Promise.all(
+    [api("/api/topics"), api("/api/settings"), api("/api/session"), api("/api/courses")]);
+  state.courses = courses;
+  try { state.courseFilter = localStorage.getItem(COURSE_KEY) || "all"; } catch { /* storage unavailable */ }
+  if (state.courseFilter !== "all" && !courses.some((c) => c.id === state.courseFilter)) state.courseFilter = "all";
   $("#logout-link").hidden = !session.auth;
   state.topics = topics;
   state.topicById = Object.fromEntries(topics.map((t) => [t.id, t]));
@@ -529,11 +621,7 @@ async function boot() {
 
   $$(".nav").forEach((b) => (b.onclick = () => showView(b.dataset.view)));
   $("#topic-search").oninput = renderCatalog;
-  $$("#subject-filter .chip").forEach((c) => (c.onclick = () => {
-    state.subjectFilter = c.dataset.subject;
-    $$("#subject-filter .chip").forEach((x) => x.classList.toggle("active", x === c));
-    renderCatalog();
-  }));
+  renderCourseChips();
   $("#add-custom").onclick = () => {
     const text = $("#custom-topic-input").value.trim();
     if (!text) { $("#custom-topic-input").focus(); return; }

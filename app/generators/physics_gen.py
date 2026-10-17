@@ -74,15 +74,15 @@ def _object(ctx: Ctx):
 
 # ======================================================== Kinematics
 
-topic("kinematics", "physics", "Mechanics", "1D kinematics",
-      "Constant-acceleration motion, free fall and braking distances.")
+topic("kinematics", "physics", "Kinematics", "1D kinematics",
+      "Constant-acceleration motion, free fall and braking distances.", courses=['conceptual', 'ap1'])
 
 # name, v0 max, accel range (lo, hi, step), top speed
 VEHICLES = [("car", 20, (1, 4, 0.5), 40), ("motorcycle", 20, (2, 6, 0.5), 50),
             ("train", 15, (0.2, 1.2, 0.1), 35), ("cyclist", 6, (0.5, 2, 0.5), 15)]
 
 
-@variant("kinematics", 1)
+@variant("kinematics", 1, "Final velocity")
 def _kin_final_v(ctx: Ctx) -> Problem:
     name, v0max, (alo, ahi, ast), vmax = pick(ctx, VEHICLES)
     while True:
@@ -101,7 +101,7 @@ DROPS = [("balcony", 4, 20), ("rooftop", 10, 60), ("bridge", 10, 80), ("cliff", 
 DROPPED = ["stone", "wrench", "water balloon", "tennis ball", "set of keys", "pine cone"]
 
 
-@variant("kinematics", 2)
+@variant("kinematics", 2, "Free fall")
 def _kin_free_fall(ctx: Ctx) -> Problem:
     place, lo, hi = pick(ctx, DROPS)
     h, t = _fall(ctx, lo, hi, 1)
@@ -117,7 +117,7 @@ MOVERS = [("cyclist", 8, (0.5, 2, 0.5), 15), ("skateboarder", 5, (0.5, 1.5, 0.5)
           ("runner", 4, (0.5, 1.5, 0.5), 9), ("car", 20, (1, 3, 0.5), 35)]
 
 
-@variant("kinematics", 2)
+@variant("kinematics", 2, "Displacement")
 def _kin_displacement(ctx: Ctx) -> Problem:
     name, v0max, (alo, ahi, ast), vmax = pick(ctx, MOVERS)
     while True:
@@ -132,7 +132,7 @@ def _kin_displacement(ctx: Ctx) -> Problem:
              {"v0": v0, "a": a, "t": t}, {"d": d}, what=name)
 
 
-@variant("kinematics", 3)
+@variant("kinematics", 3, "Stopping distance")
 def _kin_braking(ctx: Ctx) -> Problem:
     v0, a = step(ctx.rng, 12, 35, 1), step(ctx.rng, 4, 8, 0.5)
     road = "a dry road" if a >= 6 else "a wet road"
@@ -143,7 +143,7 @@ def _kin_braking(ctx: Ctx) -> Problem:
              {"v0": v0, "a": a}, {"d": v0 * v0 / (2 * a), "t": v0 / a})
 
 
-@variant("kinematics", 3)
+@variant("kinematics", 3, "Vertical throw")
 def _kin_throw_up(ctx: Ctx) -> Problem:
     v0 = step(ctx.rng, 5, 30, 1)
     thing = pick(ctx, ["ball", "rock", "beanbag", "set of keys"])
@@ -155,8 +155,8 @@ def _kin_throw_up(ctx: Ctx) -> Problem:
 
 # ======================================================== Projectiles
 
-topic("projectile", "physics", "Mechanics", "Projectile motion",
-      "Horizontal launches and angled launches over level ground.")
+topic("projectile", "physics", "Kinematics", "Projectile motion",
+      "Horizontal launches and angled launches over level ground.", courses=['conceptual', 'ap1'])
 
 # description, height range (lo, hi, step), speed range (lo, hi, step)
 LAUNCHES = [
@@ -174,7 +174,7 @@ def _horizontal(ctx: Ctx):
     return lead, who, where, h, v, t
 
 
-@variant("projectile", 1)
+@variant("projectile", 1, "Horizontal launch: range")
 def _proj_horiz_range(ctx: Ctx) -> Problem:
     lead, who, where, h, v, t = _horizontal(ctx)
     return P(f"{lead}. How far from the base of the {where} does {who} land?" + ctx.g_note(),
@@ -182,7 +182,7 @@ def _proj_horiz_range(ctx: Ctx) -> Problem:
              {"h": h, "v": v}, {"x": v * t})
 
 
-@variant("projectile", 2)
+@variant("projectile", 2, "Horizontal launch: time, range & speed")
 def _proj_horiz_full(ctx: Ctx) -> Problem:
     lead, who, where, h, v, t = _horizontal(ctx)
     vy = ctx.g * t
@@ -193,7 +193,7 @@ def _proj_horiz_full(ctx: Ctx) -> Problem:
              {"h": h, "v": v}, {"t": t, "x": v * t, "speed": math.hypot(v, vy)})
 
 
-@variant("projectile", 3)
+@variant("projectile", 3, "Angled launch")
 def _proj_angle(ctx: Ctx) -> Problem:
     th, sin_, cos_, trig_note = _angle(ctx, [20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70])
     v = step(ctx.rng, 10, 50, 10) if ctx.nice else step(ctx.rng, 10, 35, 1)
@@ -211,8 +211,8 @@ def _proj_angle(ctx: Ctx) -> Problem:
 
 # ======================================================== Forces
 
-topic("newton", "physics", "Mechanics", "Newton's laws & forces",
-      "F = ma, friction, inclined planes and Atwood machines.")
+topic("newton", "physics", "Forces & dynamics", "Newton's laws & forces",
+      "F = ma, friction, inclined planes and Atwood machines.", courses=['conceptual', 'ap1'])
 
 # noun, mass range (lo, hi, step), acceleration range (lo, hi, step)
 PUSHED = [("cart", (2, 40, 1), (0.5, 5, 0.5)), ("car", (900, 2000, 50), (1, 4, 0.5)),
@@ -220,7 +220,7 @@ PUSHED = [("cart", (2, 40, 1), (0.5, 5, 0.5)), ("car", (900, 2000, 50), (1, 4, 0
           ("skater", (40, 90, 1), (0.5, 3, 0.5)), ("hockey puck", (0.17, 0.17, 1), (5, 30, 1))]
 
 
-@variant("newton", 1)
+@variant("newton", 1, "F = ma")
 def _newton_force(ctx: Ctx) -> Problem:
     name, mr, ar = pick(ctx, PUSHED)
     m, a = step(ctx.rng, *mr), step(ctx.rng, *ar)
@@ -228,7 +228,7 @@ def _newton_force(ctx: Ctx) -> Problem:
              f"$F = {ctx.fmt(m * a)}{U('N')}$", "$F = ma$", {"m": m, "a": a}, {"F": m * a}, what=name)
 
 
-@variant("newton", 1)
+@variant("newton", 1, "F = ma")
 def _newton_accel(ctx: Ctx) -> Problem:
     name, mr, ar = pick(ctx, PUSHED)
     m = step(ctx.rng, *mr)
@@ -237,7 +237,7 @@ def _newton_accel(ctx: Ctx) -> Problem:
              f"$a = {ctx.fmt(F / m)}{U('m/s^2')}$", "$a = F/m$", {"F": F, "m": m}, {"a": F / m}, what=name)
 
 
-@variant("newton", 2)
+@variant("newton", 2, "Friction")
 def _newton_friction(ctx: Ctx) -> Problem:
     m, mu = step(ctx.rng, 10, 60, 1), step(ctx.rng, 0.1, 0.5, 0.05)
     fr = mu * m * ctx.g
@@ -250,7 +250,7 @@ def _newton_friction(ctx: Ctx) -> Problem:
              {"m": m, "F": F, "mu": mu}, {"a": a})
 
 
-@variant("newton", 3)
+@variant("newton", 3, "Inclines")
 def _newton_incline(ctx: Ctx) -> Problem:
     th, sin_, cos_, trig_note = _angle(ctx, [25, 30, 35, 40, 45])
     mu = step(ctx.rng, 0.1, 0.4, 0.05)
@@ -261,7 +261,7 @@ def _newton_incline(ctx: Ctx) -> Problem:
              {"theta": th, "mu": mu, **({"sin": sin_, "cos": cos_} if trig_note else {})}, {"a": a})
 
 
-@variant("newton", 3)
+@variant("newton", 3, "Atwood machine")
 def _newton_atwood(ctx: Ctx) -> Problem:
     m1, m2 = step(ctx.rng, 1, 10, 0.5), step(ctx.rng, 1, 10, 0.5)
     while m1 == m2:
@@ -277,11 +277,11 @@ def _newton_atwood(ctx: Ctx) -> Problem:
 
 # ======================================================== Energy
 
-topic("energy", "physics", "Mechanics", "Work, energy & power",
-      "Kinetic/potential energy, work done by forces, energy conservation, power.")
+topic("energy", "physics", "Work, energy & power", "Work, energy & power",
+      "Kinetic/potential energy, work done by forces, energy conservation, power.", courses=['conceptual', 'ap1'])
 
 
-@variant("energy", 1)
+@variant("energy", 1, "Kinetic energy")
 def _energy_ke(ctx: Ctx) -> Problem:
     name, m, v = _object(ctx)
     return P(f"Find the kinetic energy of a ${num(m)}{U('kg')}$ {name} moving at ${num(v)}{U('m/s')}$.",
@@ -297,7 +297,7 @@ LIFTS = [("textbook", (0.5, 3, 0.5), (0.5, 2, 0.1), "is lifted onto a shelf"),
          ("bucket of water", (5, 15, 0.5), (2, 20, 1), "is hauled up a well")]
 
 
-@variant("energy", 1)
+@variant("energy", 1, "Potential energy")
 def _energy_pe(ctx: Ctx) -> Problem:
     name, mr, hr, verb = pick(ctx, LIFTS)
     m, h = step(ctx.rng, *mr), step(ctx.rng, *hr)
@@ -307,7 +307,7 @@ def _energy_pe(ctx: Ctx) -> Problem:
              {"m": m, "h": h}, {"PE": m * ctx.g * h})
 
 
-@variant("energy", 2)
+@variant("energy", 2, "Work")
 def _energy_work_angle(ctx: Ctx) -> Problem:
     F, d, th = step(ctx.rng, 20, 200, 5), step(ctx.rng, 2, 50, 1), ctx.rng.choice([0, 15, 20, 25, 30, 35, 40, 45, 60])
     W = F * d * math.cos(math.radians(th))
@@ -317,7 +317,7 @@ def _energy_work_angle(ctx: Ctx) -> Problem:
              f"$W = {ctx.fmt(W)}{U('J')}$", r"$W = Fd\cos\theta$", {"F": F, "d": d, "theta": th}, {"W": W})
 
 
-@variant("energy", 2)
+@variant("energy", 2, "Energy conservation")
 def _energy_coaster(ctx: Ctx) -> Problem:
     if ctx.nice and ctx.g == 10:
         v = step(ctx.rng, 10, 36, 2)
@@ -332,7 +332,7 @@ def _energy_coaster(ctx: Ctx) -> Problem:
              f"$v = {ctx.fmt(v)}{U('m/s')}$", r"$mgh = \tfrac{1}{2}mv^2 \Rightarrow v = \sqrt{2gh}$", {"h": h}, {"v": v})
 
 
-@variant("energy", 3)
+@variant("energy", 3, "Power")
 def _energy_power(ctx: Ctx) -> Problem:
     m, h, t = step(ctx.rng, 40, 95, 1), step(ctx.rng, 3, 20, 0.5), step(ctx.rng, 4, 30, 1)
     return P(f"A ${num(m)}{U('kg')}$ student runs up stairs with a vertical rise of ${num(h)}{U('m')}$ in "
@@ -341,7 +341,7 @@ def _energy_power(ctx: Ctx) -> Problem:
              {"P": m * ctx.g * h / t})
 
 
-@variant("energy", 3)
+@variant("energy", 3, "Energy lost to friction")
 def _energy_friction_loss(ctx: Ctx) -> Problem:
     m, h = step(ctx.rng, 20, 80, 1), step(ctx.rng, 2, 8, 0.5)
     v = step(ctx.rng, 2, math.sqrt(2 * ctx.g * h) * 0.9, 0.5)
@@ -354,11 +354,11 @@ def _energy_friction_loss(ctx: Ctx) -> Problem:
 
 # ======================================================== Momentum
 
-topic("momentum", "physics", "Mechanics", "Momentum & collisions",
-      "Momentum, impulse, inelastic and elastic 1D collisions.")
+topic("momentum", "physics", "Momentum", "Momentum & collisions",
+      "Momentum, impulse, inelastic and elastic 1D collisions.", courses=['conceptual', 'ap1'])
 
 
-@variant("momentum", 1)
+@variant("momentum", 1, "Momentum")
 def _mom_p(ctx: Ctx) -> Problem:
     name, m, v = _object(ctx)
     return P(f"Find the momentum of a ${num(m)}{U('kg')}$ {name} moving at ${num(v)}{U('m/s')}$.",
@@ -372,7 +372,7 @@ HITS = [("A soccer player kicks a ball with an average force of {F}", (100, 900,
         ("A tennis racket hits a ball with an average force of {F}", (200, 800, 10), (0.003, 0.008, 0.001))]
 
 
-@variant("momentum", 1)
+@variant("momentum", 1, "Impulse")
 def _mom_impulse(ctx: Ctx) -> Problem:
     text, fr, tr = pick(ctx, HITS)
     F, t = step(ctx.rng, *fr), step(ctx.rng, *tr)
@@ -380,7 +380,7 @@ def _mom_impulse(ctx: Ctx) -> Problem:
              f"$J = {ctx.fmt(F * t)}{U('N\\cdot s')}$", r"$J = F\Delta t$", {"F": F, "t": t}, {"J": F * t})
 
 
-@variant("momentum", 2)
+@variant("momentum", 2, "Inelastic collisions")
 def _mom_inelastic(ctx: Ctx) -> Problem:
     m1, m2 = step(ctx.rng, 800, 2500, 100), step(ctx.rng, 800, 2500, 100)
     v1, v2 = step(ctx.rng, 5, 25, 1), step(ctx.rng, -10, 10, 1)
@@ -394,7 +394,7 @@ def _mom_inelastic(ctx: Ctx) -> Problem:
              {"m1": m1, "m2": m2, "v1": v1, "v2": v2}, {"vf": vf})
 
 
-@variant("momentum", 3)
+@variant("momentum", 3, "Elastic collisions")
 def _mom_elastic(ctx: Ctx) -> Problem:
     m1, m2 = step(ctx.rng, 0.1, 5, 0.1), step(ctx.rng, 0.1, 5, 0.1)
     while abs(m1 - m2) < 0.05:
@@ -411,8 +411,8 @@ def _mom_elastic(ctx: Ctx) -> Problem:
 
 # ======================================================== Circular motion & gravitation
 
-topic("circular", "physics", "Mechanics", "Circular motion & gravitation",
-      "Centripetal acceleration and force, universal gravitation, orbits.")
+topic("circular", "physics", "Circular motion & gravitation", "Circular motion & gravitation",
+      "Centripetal acceleration and force, universal gravitation, orbits.", courses=['conceptual', 'ap1'])
 
 # description, radius range, speed range, largest realistic centripetal acceleration (m/s^2)
 TURNS = [("A car rounds a curve of radius {r}", (30, 200, 5), (8, 30, 1), 8, "car"),
@@ -421,7 +421,7 @@ TURNS = [("A car rounds a curve of radius {r}", (30, 200, 5), (8, 30, 1), 8, "ca
          ("A runner rounds a curved track of radius {r}", (30, 40, 1), (5, 9, 0.5), 4, "runner")]
 
 
-@variant("circular", 1)
+@variant("circular", 1, "Centripetal acceleration")
 def _circ_accel(ctx: Ctx) -> Problem:
     text, rr, vr, amax, name = pick(ctx, TURNS)
     while True:
@@ -434,7 +434,7 @@ def _circ_accel(ctx: Ctx) -> Problem:
              what=name)
 
 
-@variant("circular", 2)
+@variant("circular", 2, "Centripetal force")
 def _circ_string(ctx: Ctx) -> Problem:
     m, r, T = step(ctx.rng, 0.2, 2, 0.1), step(ctx.rng, 0.3, 1.5, 0.1), step(ctx.rng, 0.5, 3, 0.1)
     v = 2 * math.pi * r / T
@@ -448,7 +448,7 @@ BODIES = [("Earth", 5.97e24, 6.37e6), ("Mars", 6.42e23, 3.39e6), ("the Moon", 7.
           ("Jupiter", 1.90e27, 6.99e7), ("Venus", 4.87e24, 6.05e6), ("Mercury", 3.30e23, 2.44e6)]
 
 
-@variant("circular", 3)
+@variant("circular", 3, "Orbits")
 def _circ_orbit(ctx: Ctx) -> Problem:
     name, M, R = pick(ctx, BODIES)
     h = step(ctx.rng, 200, 2000, 50) * 1e3
@@ -463,8 +463,8 @@ def _circ_orbit(ctx: Ctx) -> Problem:
 
 # ======================================================== Circuits
 
-topic("circuits", "physics", "Electricity & Magnetism", "DC circuits",
-      "Ohm's law, power, and series/parallel resistor networks.")
+topic("circuits", "physics", "Electricity", "DC circuits",
+      "Ohm's law, power, and series/parallel resistor networks.", courses=['conceptual'])
 
 E12 = [10, 12, 15, 18, 22, 27, 33, 39, 47, 56, 68, 82]
 RESISTORS = [r * k for k in (1, 10, 100) for r in E12]  # standard values, 10 Ω – 8.2 kΩ
@@ -482,21 +482,21 @@ def _battery(ctx: Ctx, smallest: float = 1.5) -> float:
     return ctx.rng.choice([v for v in (NICE_BATTERIES if ctx.nice else BATTERIES) if v >= smallest])
 
 
-@variant("circuits", 1)
+@variant("circuits", 1, "Ohm's law")
 def _ohm_current(ctx: Ctx) -> Problem:
     V, R = _battery(ctx), _resistors(ctx, 1)[0]
     return P(f"A ${num(V)}{U('V')}$ battery is connected across a ${R}{OHM}$ resistor. Find the current.",
              f"$I = {ctx.fmt(V / R)}{U('A')}$", "$I = V/R$", {"V": V, "R": R}, {"I": V / R})
 
 
-@variant("circuits", 1)
+@variant("circuits", 1, "Ohm's law")
 def _ohm_voltage(ctx: Ctx) -> Problem:
     R, I = _resistors(ctx, 1)[0], step(ctx.rng, 0.02, 0.5, 0.01)
     return P(f"A current of ${num(I)}{U('A')}$ flows through a ${R}{OHM}$ resistor. Find the voltage across it.",
              f"$V = {ctx.fmt(I * R)}{U('V')}$", "$V = IR$", {"I": I, "R": R}, {"V": I * R})
 
 
-@variant("circuits", 1)
+@variant("circuits", 1, "Ohm's law")
 def _ohm_resistance(ctx: Ctx) -> Problem:
     V, I = _battery(ctx, 3), step(ctx.rng, 0.05, 2, 0.05)
     return P(f"A device draws ${num(I)}{U('A')}$ from a ${num(V)}{U('V')}$ battery. What is its resistance?",
@@ -507,7 +507,7 @@ def _resistor_list(Rs):
     return ", ".join(f"${r}{OHM}$" for r in Rs[:-1]) + f" and ${Rs[-1]}{OHM}$"
 
 
-@variant("circuits", 2)
+@variant("circuits", 2, "Series circuits")
 def _circ_series(ctx: Ctx) -> Problem:
     Rs = _resistors(ctx, ctx.rng.randint(2, 3))
     V = _battery(ctx, 4.5)
@@ -520,7 +520,7 @@ def _circ_series(ctx: Ctx) -> Problem:
              {"Req": Req, "I": V / Req, "V1": V / Req * Rs[0]})
 
 
-@variant("circuits", 2)
+@variant("circuits", 2, "Parallel circuits")
 def _circ_parallel(ctx: Ctx) -> Problem:
     Rs = _resistors(ctx, ctx.rng.randint(2, 3))
     V = _battery(ctx, 4.5)
@@ -533,7 +533,7 @@ def _circ_parallel(ctx: Ctx) -> Problem:
              {"Req": Req, "I": V / Req, "P": V * V / Req})
 
 
-@variant("circuits", 3)
+@variant("circuits", 3, "Combination circuits")
 def _circ_combo(ctx: Ctx) -> Problem:
     R1, R2, R3 = _resistors(ctx, 3)
     V = _battery(ctx, 6)
@@ -550,12 +550,12 @@ def _circ_combo(ctx: Ctx) -> Problem:
 
 # ======================================================== Electrostatics
 
-topic("electrostatics", "physics", "Electricity & Magnetism", "Electrostatics",
-      "Coulomb's law and electric field of point charges.")
+topic("electrostatics", "physics", "Electricity", "Electrostatics",
+      "Coulomb's law and electric field of point charges.", courses=['conceptual'])
 
 
-@variant("electrostatics", 1)
-@variant("electrostatics", 2)
+@variant("electrostatics", 1, "Coulomb's law")
+@variant("electrostatics", 2, "Coulomb's law")
 def _coulomb(ctx: Ctx) -> Problem:
     q1, q2 = step(ctx.rng, 1, 9, 0.5), step(ctx.rng, 1, 9, 0.5)
     r = step(ctx.rng, 0.05, 2, 0.05)
@@ -566,7 +566,7 @@ def _coulomb(ctx: Ctx) -> Problem:
              {"q1": q1, "q2": q2, "r": r}, {"F": F})
 
 
-@variant("electrostatics", 3)
+@variant("electrostatics", 3, "Electric field")
 def _field(ctx: Ctx) -> Problem:
     q1, q2 = ctx.rng.sample(range(1, 10), 2)  # distinct, so the fields don't cancel exactly
     d = step(ctx.rng, 0.2, 1, 0.1)
@@ -580,8 +580,8 @@ def _field(ctx: Ctx) -> Problem:
 
 # ======================================================== Waves
 
-topic("waves", "physics", "Waves & Optics", "Waves & sound",
-      "Wave speed, period, echoes and standing waves on strings.")
+topic("waves", "physics", "Waves & sound", "Waves & sound",
+      "Wave speed, period, echoes and standing waves on strings.", courses=['conceptual'])
 
 # description, speed range (lo, hi, step), frequency range (lo, hi, step)
 WAVES = [("a sound wave in air", (343, 343, 1), (100, 2000, 10)),
@@ -591,7 +591,7 @@ WAVES = [("a sound wave in air", (343, 343, 1), (100, 2000, 10)),
          ("a wave on a stretched rope", (1, 6, 0.5), (0.5, 4, 0.5))]
 
 
-@variant("waves", 1)
+@variant("waves", 1, "Wave speed")
 def _wave_speed(ctx: Ctx) -> Problem:
     name, vr, fr = pick(ctx, WAVES)
     v, f = step(ctx.rng, *vr), step(ctx.rng, *fr)
@@ -613,7 +613,7 @@ ECHOES = [("You shout toward a cliff and hear the echo {t} later.", 343, True, (
            "How far away is the moth?")]
 
 
-@variant("waves", 2)
+@variant("waves", 2, "Echoes")
 def _wave_echo(ctx: Ctx) -> Problem:
     text, v, there_and_back, tr, ask = pick(ctx, ECHOES)
     t = step(ctx.rng, *tr)
@@ -625,7 +625,7 @@ def _wave_echo(ctx: Ctx) -> Problem:
              {"t": t, "v": v}, {"d": d})
 
 
-@variant("waves", 3)
+@variant("waves", 3, "Standing waves")
 def _string_harmonic(ctx: Ctx) -> Problem:
     L_, v, n = step(ctx.rng, 0.3, 1.5, 0.05), step(ctx.rng, 100, 500, 10), ctx.rng.randint(1, 4)
     ords = {1: "fundamental", 2: "second harmonic", 3: "third harmonic", 4: "fourth harmonic"}
@@ -638,16 +638,16 @@ def _string_harmonic(ctx: Ctx) -> Problem:
 
 # ======================================================== Optics
 
-topic("optics", "physics", "Waves & Optics", "Optics",
-      "Snell's law, thin lenses and magnification.")
+topic("optics", "physics", "Light & optics", "Optics",
+      "Snell's law, thin lenses and magnification.", courses=['conceptual'])
 
 MEDIA = [("air", 1.00), ("water", 1.33), ("ice", 1.31), ("ethanol", 1.36), ("glycerin", 1.47),
          ("acrylic", 1.49), ("crown glass", 1.52), ("flint glass", 1.66), ("cubic zirconia", 2.15),
          ("diamond", 2.42)]
 
 
-@variant("optics", 1)
-@variant("optics", 2)
+@variant("optics", 1, "Snell's law")
+@variant("optics", 2, "Snell's law")
 def _snell(ctx: Ctx) -> Problem:
     (m1, n1), (m2, n2) = sorted(ctx.rng.sample(MEDIA, 2), key=lambda m: m[1])  # slow -> fast: no TIR
     th1 = step(ctx.rng, 10, 70, 5)
@@ -658,7 +658,7 @@ def _snell(ctx: Ctx) -> Problem:
              {"n1": n1, "n2": n2, "theta1": th1}, {"theta2": th2})
 
 
-@variant("optics", 3)
+@variant("optics", 3, "Thin lenses")
 def _lens(ctx: Ctx) -> Problem:
     f = step(ctx.rng, 5, 30, 1)
     do = step(ctx.rng, math.ceil(f * 1.2), f * 4, 1)
@@ -673,13 +673,13 @@ def _lens(ctx: Ctx) -> Problem:
 
 # ======================================================== Thermal
 
-topic("thermal", "physics", "Thermodynamics", "Heat & gases",
-      "Specific heat, latent heat and the ideal gas law.")
+topic("thermal", "physics", "Heat", "Heat & gases",
+      "Specific heat, latent heat and the ideal gas law.", courses=['conceptual'])
 
 SPECIFIC_HEAT = [("water", 4186), ("aluminum", 900), ("copper", 385), ("iron", 450), ("glass", 840)]
 
 
-@variant("thermal", 1)
+@variant("thermal", 1, "Specific heat")
 def _heat_specific(ctx: Ctx) -> Problem:
     name, c = pick(ctx, SPECIFIC_HEAT)
     m, dT = step(ctx.rng, 0.1, 5, 0.1), step(ctx.rng, 5, 80, 1)
@@ -689,7 +689,7 @@ def _heat_specific(ctx: Ctx) -> Problem:
              {"Q": m * c * dT})
 
 
-@variant("thermal", 2)
+@variant("thermal", 2, "Phase change")
 def _heat_melt(ctx: Ctx) -> Problem:
     m, T0 = step(ctx.rng, 0.1, 2, 0.1), step(ctx.rng, -30, -5, 1)
     Q = m * 2090 * (-T0) + m * 3.34e5
@@ -699,7 +699,7 @@ def _heat_melt(ctx: Ctx) -> Problem:
              f"$Q = {ctx.fmt(Q)}{U('J')}$", r"$Q = mc_{ice}\Delta T + mL_f$", {"m": m, "T0": T0}, {"Q": Q})
 
 
-@variant("thermal", 3)
+@variant("thermal", 3, "Ideal gas law")
 def _gas(ctx: Ctx) -> Problem:
     n, T, V = step(ctx.rng, 0.5, 5, 0.5), step(ctx.rng, 250, 450, 5), step(ctx.rng, 5, 50, 1)
     P_ = n * 8.314 * T / (V / 1000)
@@ -712,15 +712,15 @@ def _gas(ctx: Ctx) -> Problem:
 
 # ======================================================== Fluids
 
-topic("fluids", "physics", "Thermodynamics", "Fluids & pressure",
-      "Density, hydrostatic pressure and buoyancy.")
+topic("fluids", "physics", "Fluids", "Fluids & pressure",
+      "Density, hydrostatic pressure and buoyancy.", courses=['conceptual', 'ap1'])
 
 # density in g/cm^3
 MATERIALS = [("aluminum", 2.70), ("iron", 7.87), ("copper", 8.96), ("lead", 11.3), ("gold", 19.3),
              ("silver", 10.5), ("ice", 0.917), ("oak", 0.75), ("cork", 0.24), ("granite", 2.75), ("glass", 2.5)]
 
 
-@variant("fluids", 1)
+@variant("fluids", 1, "Density")
 def _density(ctx: Ctx) -> Problem:
     name, rho = pick(ctx, MATERIALS)
     V = step(ctx.rng, 5, 500, 5)
@@ -737,7 +737,7 @@ def _density(ctx: Ctx) -> Problem:
 WATERS = [("a freshwater lake", 1000), ("the ocean", 1025)]
 
 
-@variant("fluids", 2)
+@variant("fluids", 2, "Pressure at depth")
 def _pressure_depth(ctx: Ctx) -> Problem:
     where, rho = pick(ctx, WATERS)
     h = step(ctx.rng, 1, 100, 0.5)
@@ -747,7 +747,7 @@ def _pressure_depth(ctx: Ctx) -> Problem:
              f"$P = {ctx.fmt(P_)}{U('Pa')}$", r"$P = P_0 + \rho g h$", {"h": h, "rho": rho}, {"P": P_})
 
 
-@variant("fluids", 3)
+@variant("fluids", 3, "Buoyancy")
 def _buoyancy(ctx: Ctx) -> Problem:
     V, rho = step(ctx.rng, 0.001, 0.02, 0.001), step(ctx.rng, 2000, 8000, 100)
     W = rho * V * ctx.g

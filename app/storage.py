@@ -32,6 +32,9 @@ DEFAULT_SETTINGS = {
     # Physics defaults (each section can override)
     "physics_g": 9.8,  # 9.8 or 10 m/s^2
     "physics_nice": False,  # whole-number givens/answers, e.g. for conceptual physics
+    # Math defaults (each section can override)
+    "math_answer_form": "both",  # exact (π, radicals) | decimal | both
+    "math_places": 1,  # round decimal answers to the nearest tenth
 }
 
 _ID = re.compile(r"^[a-f0-9]{32}$")

@@ -13,10 +13,39 @@ from .core import Ctx, Problem, U, frac, num, nz, sig, topic, variant
 x, y = sp.symbols("x y")
 L = sp.latex
 
+
+def pi_tex(const, coef) -> str:
+    r"""const + coef*pi written the way textbooks do, e.g. 1290 + \frac{225}{2}\pi."""
+    c = sp.Rational(coef)
+    pi = f"{'' if c == 1 else L(c)}\\pi"
+    return f"{const} + {pi}" if const else pi
+
+
+def split_square(n: int) -> tuple[int, int]:
+    """n = k^2 * m with m square-free: returns (k, m)."""
+    k = math.isqrt(n)
+    while n % (k * k):
+        k -= 1
+    return k, n // (k * k)
+
+
+def pm_tex(a: int, b: int, disc: int) -> tuple[str, tuple[int, int, int, int]]:
+    """Roots of ax^2 + bx + c with discriminant ``disc`` as one reduced "(B ± K√M)/D" expression."""
+    k, m = split_square(disc)
+    B, K, D = -b, k, 2 * a
+    g = math.gcd(math.gcd(B, K), D)
+    B, K, D = B // g, K // g, D // g
+    rad = f"{'' if K == 1 else K}\\sqrt{{{m}}}"
+    if D == 1:
+        tex = f"{B} \\pm {rad}" if B else f"\\pm {rad}"
+    else:
+        tex = f"\\frac{{{B} \\pm {rad}}}{{{D}}}" if B else f"\\pm \\frac{{{rad}}}{{{D}}}"
+    return tex, (B, K, m, D)
+
 # ======================================================== Arithmetic
 
-topic("add_sub", "math", "Arithmetic", "Addition & subtraction",
-      "Whole-number addition and subtraction; negatives at higher levels.")
+topic("add_sub", "math", "Foundations", "Addition & subtraction",
+      "Whole-number addition and subtraction; negatives at higher levels.", courses=['alg1'])
 
 
 def _add_sub(ctx: Ctx, lo: int, hi: int) -> Problem:
@@ -30,12 +59,12 @@ def _add_sub(ctx: Ctx, lo: int, hi: int) -> Problem:
     return Problem(f"$${q}$$", f"${a + b}$")
 
 
-variant("add_sub", 1)(lambda c: _add_sub(c, 1, 20))
-variant("add_sub", 2)(lambda c: _add_sub(c, 10, 999))
-variant("add_sub", 3)(lambda c: _add_sub(c, -999, 9999))
+variant("add_sub", 1, "Add & subtract")(lambda c: _add_sub(c, 1, 20))
+variant("add_sub", 2, "Add & subtract")(lambda c: _add_sub(c, 10, 999))
+variant("add_sub", 3, "Add & subtract")(lambda c: _add_sub(c, -999, 9999))
 
-topic("mul_div", "math", "Arithmetic", "Multiplication & division",
-      "Times tables up to multi-digit products; exact division.")
+topic("mul_div", "math", "Foundations", "Multiplication & division",
+      "Times tables up to multi-digit products; exact division.", courses=['alg1'])
 
 
 def _mul_div(ctx: Ctx, a_rng: tuple[int, int], b_rng: tuple[int, int]) -> Problem:
@@ -45,12 +74,12 @@ def _mul_div(ctx: Ctx, a_rng: tuple[int, int], b_rng: tuple[int, int]) -> Proble
     return Problem(rf"$${a * b} \div {b}$$", f"${a}$")
 
 
-variant("mul_div", 1)(lambda c: _mul_div(c, (1, 10), (1, 10)))
-variant("mul_div", 2)(lambda c: _mul_div(c, (11, 99), (2, 9)))
-variant("mul_div", 3)(lambda c: _mul_div(c, (100, 999), (11, 99)))
+variant("mul_div", 1, "Multiply & divide")(lambda c: _mul_div(c, (1, 10), (1, 10)))
+variant("mul_div", 2, "Multiply & divide")(lambda c: _mul_div(c, (11, 99), (2, 9)))
+variant("mul_div", 3, "Multiply & divide")(lambda c: _mul_div(c, (100, 999), (11, 99)))
 
-topic("order_ops", "math", "Arithmetic", "Order of operations",
-      "Evaluate expressions with parentheses, exponents, × and ÷.")
+topic("order_ops", "math", "Foundations", "Order of operations",
+      "Evaluate expressions with parentheses, exponents, × and ÷.", courses=['alg1'])
 
 _OPS_TEMPLATES = {
     1: [
@@ -87,10 +116,10 @@ def _order_ops(ctx: Ctx) -> Problem:
 
 
 for _lv in (1, 2, 3):
-    variant("order_ops", _lv)(_order_ops)
+    variant("order_ops", _lv, "Evaluate expressions")(_order_ops)
 
-topic("fractions", "math", "Arithmetic", "Fractions",
-      "Add, subtract, multiply and divide fractions; answers fully simplified.")
+topic("fractions", "math", "Foundations", "Fractions",
+      "Add, subtract, multiply and divide fractions; answers fully simplified.", courses=['alg1'])
 
 
 def _rand_frac(ctx: Ctx, maxd: int) -> Fraction:
@@ -98,7 +127,7 @@ def _rand_frac(ctx: Ctx, maxd: int) -> Fraction:
     return Fraction(ctx.rng.randint(1, d * 2 - 1), d)
 
 
-@variant("fractions", 1)
+@variant("fractions", 1, "Same denominators")
 def _frac_same_den(ctx: Ctx) -> Problem:
     d = ctx.rng.randint(3, 12)
     a, b = ctx.rng.randint(1, d - 1), ctx.rng.randint(1, d - 1)
@@ -124,14 +153,14 @@ def _frac_ops(ctx: Ctx, mixed: bool) -> Problem:
     return Problem(f"$${frac(f1, mixed)} {op} {frac(f2, mixed)}$$", ans)
 
 
-variant("fractions", 2)(lambda c: _frac_ops(c, False))
-variant("fractions", 3)(lambda c: _frac_ops(c, True))
+variant("fractions", 2, "Any denominators")(lambda c: _frac_ops(c, False))
+variant("fractions", 3, "Mixed numbers")(lambda c: _frac_ops(c, True))
 
-topic("percent", "math", "Arithmetic", "Percentages",
-      "Percent of a number, percent change and reverse percentages.")
+topic("percent", "math", "Foundations", "Percentages",
+      "Percent of a number, percent change and reverse percentages.", courses=['alg1'])
 
 
-@variant("percent", 1)
+@variant("percent", 1, "Percent of a number")
 def _pct_of(ctx: Ctx) -> Problem:
     p = ctx.rng.choice([5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90])
     n = ctx.rng.randint(1, 30) * 20
@@ -149,7 +178,7 @@ _PCT_CONTEXTS = [
 ]
 
 
-@variant("percent", 2)
+@variant("percent", 2, "Find the percent")
 def _pct_what(ctx: Ctx) -> Problem:
     while True:
         whole = ctx.rng.choice([20, 25, 40, 50, 60, 80, 120, 150, 160, 200, 240, 250, 300, 400, 500])
@@ -166,7 +195,7 @@ def _pct_what(ctx: Ctx) -> Problem:
 _ITEMS = ["jacket", "pair of headphones", "bike", "video game", "backpack", "pair of sneakers"]
 
 
-@variant("percent", 3)
+@variant("percent", 3, "Original price after a discount")
 def _pct_discount(ctx: Ctx) -> Problem:
     p = ctx.rng.choice([10, 15, 20, 25, 30, 35, 40, 50])
     orig = ctx.rng.randint(4, 60) * 5
@@ -178,7 +207,7 @@ def _pct_discount(ctx: Ctx) -> Problem:
                    facts={"p": p, "sale": sale, "orig": orig})
 
 
-@variant("percent", 3)
+@variant("percent", 3, "Percent change")
 def _pct_change(ctx: Ctx) -> Problem:
     old = ctx.rng.randint(5, 50) * 4
     new = old + ctx.rng.choice([-1, 1]) * old * ctx.rng.choice([5, 10, 20, 25, 40, 50, 75]) // 100
@@ -205,25 +234,25 @@ def num_frac(f: Fraction) -> str:
 
 # ======================================================== Algebra
 
-topic("linear_eq", "math", "Algebra", "Linear equations",
-      "Solve one-step, two-step, and variables-on-both-sides equations.")
+topic("linear_eq", "math", "Equations", "Linear equations",
+      "Solve one-step, two-step, and variables-on-both-sides equations.", courses=['alg1'])
 
 
-@variant("linear_eq", 1)
+@variant("linear_eq", 1, "One-step (add or subtract)")
 def _lin_add(ctx: Ctx) -> Problem:
     sol, a = nz(ctx.rng, -12, 15), nz(ctx.rng, -15, 15)
     eq = sp.Eq(x + a, sol + a)
     return Problem(f"Solve for $x$: $${L(eq)}$$", f"$x = {sol}$", facts={"eq": eq, "x": sol})
 
 
-@variant("linear_eq", 1)
+@variant("linear_eq", 1, "One-step (multiply or divide)")
 def _lin_mul(ctx: Ctx) -> Problem:
     sol, a = nz(ctx.rng, -12, 15), ctx.rng.choice([2, 3, 4, 5, 6, 7, 8, 9, 10, 12, -2, -3, -4, -5])
     eq = sp.Eq(a * x, a * sol)
     return Problem(f"Solve for $x$: $${L(eq)}$$", f"$x = {sol}$", facts={"eq": eq, "x": sol})
 
 
-@variant("linear_eq", 2)
+@variant("linear_eq", 2, "Two-step equations")
 def _lin2(ctx: Ctx) -> Problem:
     sol = nz(ctx.rng, -10, 10)
     a, b = ctx.rng.choice([2, 3, 4, 5, 6, 7, 8, 9, -2, -3, -4, -5, -6]), nz(ctx.rng, -20, 20)
@@ -232,7 +261,7 @@ def _lin2(ctx: Ctx) -> Problem:
                    rf"${a}x = {a * sol + b} - ({b}) = {a * sol}$, so $x = {sol}$", facts={"eq": eq, "x": sol})
 
 
-@variant("linear_eq", 3)
+@variant("linear_eq", 3, "Variables on both sides")
 def _lin3(ctx: Ctx) -> Problem:
     sol = nz(ctx.rng, -10, 10)
     a, b = ctx.rng.randint(2, 6), nz(ctx.rng, -8, 8)
@@ -247,8 +276,8 @@ def _lin3(ctx: Ctx) -> Problem:
                    rf"${a - c}x = {d - a * b}$, so $x = {sol}$", facts={"eq": eq, "x": sol})
 
 
-topic("systems", "math", "Algebra", "Systems of equations",
-      "Two linear equations in two unknowns with integer solutions.")
+topic("systems", "math", "Systems of equations", "Systems of equations",
+      "Two linear equations in two unknowns with integer solutions.", courses=['alg1', 'alg2'])
 
 
 def _system(ctx: Ctx, coef: int, sol_rng: int) -> Problem:
@@ -263,15 +292,15 @@ def _system(ctx: Ctx, coef: int, sol_rng: int) -> Problem:
                    f"$x = {sx},\\ y = {sy}$", facts={"eqs": [e1, e2], "x": sx, "y": sy})
 
 
-variant("systems", 1)(lambda c: _system(c, 3, 6))
-variant("systems", 2)(lambda c: _system(c, 6, 9))
-variant("systems", 3)(lambda c: _system(c, 12, 12))
+variant("systems", 1, "Solve a system")(lambda c: _system(c, 3, 6))
+variant("systems", 2, "Solve a system")(lambda c: _system(c, 6, 9))
+variant("systems", 3, "Solve a system")(lambda c: _system(c, 12, 12))
 
-topic("quadratics", "math", "Algebra", "Quadratic equations",
-      "Solve by factoring, or with the quadratic formula at the hard level.")
+topic("quadratics", "math", "Quadratics", "Quadratic equations",
+      "Solve by factoring, or with the quadratic formula at the hard level.", courses=['alg1', 'alg2'], exact_forms=True, rounding=True)
 
 
-@variant("quadratics", 1)
+@variant("quadratics", 1, "Factor x² + bx + c")
 def _quad1(ctx: Ctx) -> Problem:
     r1, r2 = ctx.rng.sample(range(-9, 10), 2)  # distinct roots
     poly = sp.expand((x - r1) * (x - r2))
@@ -281,7 +310,7 @@ def _quad1(ctx: Ctx) -> Problem:
                    f"${L(poly)} = {L(sp.factor(poly))}$", facts={"poly": poly, "roots": roots})
 
 
-@variant("quadratics", 2)
+@variant("quadratics", 2, "Factor ax² + bx + c")
 def _quad2(ctx: Ctx) -> Problem:
     # (px - q)(x - r) with gcd(p, q) = 1, keeping coefficients small enough to factor by hand
     while True:
@@ -295,7 +324,7 @@ def _quad2(ctx: Ctx) -> Problem:
                    f"${L(poly)} = {L(sp.factor(poly))}$", facts={"poly": poly, "roots": roots})
 
 
-@variant("quadratics", 3)
+@variant("quadratics", 3, "Quadratic formula")
 def _quad3(ctx: Ctx) -> Problem:
     while True:
         a, b, c = ctx.rng.randint(1, 5), nz(ctx.rng, -10, 10), nz(ctx.rng, -12, 12)
@@ -304,16 +333,18 @@ def _quad3(ctx: Ctx) -> Problem:
             break
     poly = a * x**2 + b * x + c
     roots = sorted(sp.solve(sp.Eq(poly, 0), x), key=float)
-    exact = ",\\ ".join(f"x = {L(sp.together(rt))}" for rt in roots)
-    approx = ",\\ ".join(sig(float(rt), ctx.sig) for rt in roots)
-    return Problem(f"Solve using the quadratic formula: $${L(poly)} = 0$$",
-                   f"${exact}$ $(\\approx {approx})$", facts={"poly": poly, "roots": roots},
+    exact, pm = pm_tex(a, b, disc)
+    approx = ",\\ ".join(ctx.rnd(float(rt)) for rt in roots)
+    answer = {"exact": f"$x = {exact}$", "decimal": f"$x \\approx {approx}$",
+              "both": f"$x = {exact}$ $(x \\approx {approx})$"}[ctx.form]
+    return Problem(f"Solve using the quadratic formula: $${L(poly)} = 0$$" + ctx.form_note("in simplest radical form"),
+                   answer, facts={"poly": poly, "roots": roots, "pm": pm},
                    solution=
                    rf"$x = \frac{{-({b}) \pm \sqrt{{{b}^2 - 4({a})({c})}}}}{{2({a})}} = \frac{{{-b} \pm \sqrt{{{disc}}}}}{{{2 * a}}}$")
 
 
-topic("exponents", "math", "Algebra", "Exponent rules",
-      "Simplify expressions using product, quotient and power rules.")
+topic("exponents", "math", "Exponents", "Exponent rules",
+      "Simplify expressions using product, quotient and power rules.", courses=['alg1', 'alg2'])
 
 
 def _mono(c: int, var: str, e: int) -> str:
@@ -321,7 +352,7 @@ def _mono(c: int, var: str, e: int) -> str:
     return f"{'' if c == 1 else c}{var}^{{{e}}}"
 
 
-@variant("exponents", 1)
+@variant("exponents", 1, "Product rule")
 def _exp_product(ctx: Ctx) -> Problem:
     c1, c2, a, b = ctx.rng.randint(1, 9), ctx.rng.randint(1, 9), ctx.rng.randint(2, 9), ctx.rng.randint(2, 9)
     q = (c1 * x**a) * (c2 * x**b)
@@ -330,7 +361,7 @@ def _exp_product(ctx: Ctx) -> Problem:
                    facts={"q_expr": q, "ans_expr": c1 * c2 * x ** (a + b)})
 
 
-@variant("exponents", 1)
+@variant("exponents", 1, "Quotient rule")
 def _exp_quotient(ctx: Ctx) -> Problem:
     c2, k, b, d = ctx.rng.randint(1, 6), ctx.rng.randint(1, 8), ctx.rng.randint(1, 6), ctx.rng.randint(1, 7)
     c1, a = c2 * k, b + d
@@ -340,7 +371,7 @@ def _exp_quotient(ctx: Ctx) -> Problem:
                    facts={"q_expr": q, "ans_expr": k * x**d})
 
 
-@variant("exponents", 2)
+@variant("exponents", 2, "Power rule")
 def _exp2(ctx: Ctx) -> Problem:
     while True:
         a, b, c = ctx.rng.randint(2, 6), ctx.rng.randint(2, 4), ctx.rng.randint(1, 12)
@@ -352,7 +383,7 @@ def _exp2(ctx: Ctx) -> Problem:
                    f"${L(ans)}$", facts={"q_expr": (k * x**a) ** b / x**c, "ans_expr": ans})
 
 
-@variant("exponents", 3)
+@variant("exponents", 3, "Negative exponents")
 def _exp3(ctx: Ctx) -> Problem:
     while True:
         a, b, c = ctx.rng.randint(1, 5), ctx.rng.randint(1, 5), ctx.rng.randint(2, 3)
@@ -366,15 +397,15 @@ def _exp3(ctx: Ctx) -> Problem:
                    facts={"q_expr": (x**a * y ** (-b)) ** c / (x**d * y**e), "ans_expr": ans})
 
 
-topic("logs", "math", "Algebra", "Logarithms",
-      "Evaluate logs and solve exponential/logarithmic equations.")
+topic("logs", "math", "Exponentials & logarithms", "Logarithms",
+      "Evaluate logs and solve exponential/logarithmic equations.", courses=['alg2', 'precalc'], rounding=True)
 
 
 def _log_arg(r: int, n: int) -> str:
     return str(r**n) if n >= 0 else f"\\frac{{1}}{{{r ** -n}}}"
 
 
-@variant("logs", 1)
+@variant("logs", 1, "Evaluate logarithms")
 def _log_eval(ctx: Ctx) -> Problem:
     while True:
         b, n = ctx.rng.randint(2, 10), ctx.rng.choice([-3, -2, -1, 1, 2, 3, 4, 5, 6])
@@ -385,7 +416,7 @@ def _log_eval(ctx: Ctx) -> Problem:
                    f"${b}^{{{n}}} = {_log_arg(b, n)}$", facts={"base": b, "arg": sp.Rational(b) ** n, "x": n})
 
 
-@variant("logs", 1)
+@variant("logs", 1, "Natural logs")
 def _log_ln(ctx: Ctx) -> Problem:
     n = ctx.rng.choice([-3, -2, -1, 2, 3, 4, 5, 6, 7])
     if ctx.rng.random() < 0.5:
@@ -393,7 +424,7 @@ def _log_ln(ctx: Ctx) -> Problem:
     return Problem(f"Evaluate: $$e^{{\\ln {abs(n)}}}$$", f"${abs(n)}$")
 
 
-@variant("logs", 2)
+@variant("logs", 2, "Logs with fractional values")
 def _log_frac(ctx: Ctx) -> Problem:
     # log_{r^m}(r^n) = n/m, e.g. log_8(4) = 2/3
     while True:
@@ -407,17 +438,17 @@ def _log_frac(ctx: Ctx) -> Problem:
                    facts={"base": r**m, "arg": sp.Rational(r) ** n, "x": v})
 
 
-@variant("logs", 2)
+@variant("logs", 2, "Solve exponential equations")
 def _log_solve(ctx: Ctx) -> Problem:
     b = ctx.rng.choice([2, 3, 5, 6, 7, 10, 1.5, 1.05, 1.08])
     c = ctx.rng.randint(5, 500)
     xv = math.log(c) / math.log(b)
-    return Problem(f"Solve for $x$ (to {ctx.sig} significant figures): $${num(b)}^{{x}} = {c}$$",
-                   f"$x \\approx {sig(xv, ctx.sig)}$",
+    return Problem(f"Solve for $x$: $${num(b)}^{{x}} = {c}$$" + ctx.round_note(),
+                   f"$x \\approx {ctx.rnd(xv)}$",
                    rf"$x = \frac{{\ln {c}}}{{\ln {num(b)}}}$", facts={"base": b, "arg": c, "x": xv})
 
 
-@variant("logs", 3)
+@variant("logs", 3, "Log properties")
 def _log_sum(ctx: Ctx) -> Problem:
     while True:
         b, n = ctx.rng.choice([2, 3, 4, 5, 6, 10]), ctx.rng.randint(1, 4)
@@ -435,7 +466,7 @@ def _log_sum(ctx: Ctx) -> Problem:
                    facts={"lhs": sp.log(x, b) - sp.log(m, b), "rhs": n, "x": m * b**n})
 
 
-@variant("logs", 3)
+@variant("logs", 3, "Solve log equations")
 def _log_shift(ctx: Ctx) -> Problem:
     b, n, k = ctx.rng.choice([2, 3, 4, 5, 10]), ctx.rng.randint(1, 4), nz(ctx.rng, -20, 20)
     base = "" if b == 10 else f"_{{{b}}}"
@@ -446,8 +477,8 @@ def _log_shift(ctx: Ctx) -> Problem:
 
 # ======================================================== Geometry
 
-topic("pythagorean", "math", "Geometry", "Pythagorean theorem",
-      "Missing sides of right triangles, the converse, and 3-D diagonals.")
+topic("pythagorean", "math", "Right triangles", "Pythagorean theorem",
+      "Missing sides of right triangles, the converse, and 3-D diagonals.", courses=['geo'], exact_forms=True, rounding=True)
 
 _TRIPLES = [(3, 4, 5), (5, 12, 13), (8, 15, 17), (7, 24, 25), (20, 21, 29), (9, 40, 41), (12, 35, 37),
             (11, 60, 61), (28, 45, 53), (33, 56, 65)]
@@ -491,7 +522,7 @@ def _scaled_triple(ctx: Ctx, cmax: int = 100, fits=_ANY):
     return ctx.rng.choice(options)
 
 
-@variant("pythagorean", 1)
+@variant("pythagorean", 1, "Find the hypotenuse")
 def _pyth_hyp(ctx: Ctx) -> Problem:
     unit, cmax, hyp_text, _, fits = ctx.rng.choice(_PYTH_CONTEXTS)
     a, b, c = _scaled_triple(ctx, cmax, fits)
@@ -499,7 +530,7 @@ def _pyth_hyp(ctx: Ctx) -> Problem:
                    rf"$c = \sqrt{{{a}^2 + {b}^2}} = \sqrt{{{c * c}}} = {c}$", facts={"a": a, "b": b, "c": c})
 
 
-@variant("pythagorean", 2)
+@variant("pythagorean", 2, "Find a leg")
 def _pyth_leg(ctx: Ctx) -> Problem:
     unit, cmax, _, leg_text, fits = ctx.rng.choice(_PYTH_CONTEXTS)
     a, b, c = _scaled_triple(ctx, cmax, fits)
@@ -507,12 +538,13 @@ def _pyth_leg(ctx: Ctx) -> Problem:
                    rf"$b = \sqrt{{{c}^2 - {a}^2}} = \sqrt{{{b * b}}} = {b}$", facts={"a": a, "b": b, "c": c})
 
 
-@variant("pythagorean", 2)
+@variant("pythagorean", 2, "Is it a right triangle?")
 def _pyth_converse(ctx: Ctx) -> Problem:
     a, b, c = _scaled_triple(ctx, 60)
     a, b = sorted((a, b))
     if ctx.rng.random() < 0.5:
-        c += ctx.rng.choice([-2, -1, 1, 2])  # near miss: looks plausible, isn't right
+        # near miss: looks plausible, isn't right — but must still be a triangle (3, 4, 7 isn't)
+        c += ctx.rng.choice([d for d in (-2, -1, 1, 2) if a + b > c + d > b - a])
     sides = sorted((a, b, c))
     right = sides[0] ** 2 + sides[1] ** 2 == sides[2] ** 2
     kind = "right" if right else ("acute" if sides[0] ** 2 + sides[1] ** 2 > sides[2] ** 2 else "obtuse")
@@ -525,7 +557,7 @@ def _pyth_converse(ctx: Ctx) -> Problem:
                    facts={"sides": sides, "kind": kind})
 
 
-@variant("pythagorean", 3)
+@variant("pythagorean", 3, "Simplest radical form")
 def _pyth_radical(ctx: Ctx) -> Problem:
     unit, _, hyp_text, leg_text, fits = ctx.rng.choice(_PYTH_CONTEXTS)
     is_square = lambda n: math.isqrt(n) ** 2 == n  # noqa: E731
@@ -543,71 +575,71 @@ def _pyth_radical(ctx: Ctx) -> Problem:
                 break
         exact, q = sp.sqrt(c * c - a * a), _fill(leg_text, unit, a=a, c=c)
         facts = {"a": a, "b": exact, "c": c}
-    return Problem(q + " Give the exact answer in simplest radical form and a decimal.",
-                   f"${L(exact)} \\approx {sig(float(exact), ctx.sig)}{U(unit)}$", facts=facts)
+    return Problem(q + ctx.form_note("in simplest radical form"),
+                   f"${ctx.exact_or_decimal(L(exact), float(exact), unit)}$", facts=facts)
 
 
-@variant("pythagorean", 3)
+@variant("pythagorean", 3, "3-D diagonals")
 def _pyth_box(ctx: Ctx) -> Problem:
     l, w, h = ctx.rng.randint(2, 20), ctx.rng.randint(2, 15), ctx.rng.randint(2, 15)
     d = sp.sqrt(l * l + w * w + h * h)
     what = ctx.rng.choice(["box", "shipping crate", "room"])
     unit = "ft" if what == "room" else "in"
-    ans = L(d) if d.is_Integer else f"{L(d)} \\approx {sig(float(d), ctx.sig)}"
-    return Problem(f"A rectangular {what} measures ${l}$ by ${w}$ by ${h}${U(unit)}. How long is the diagonal "
-                   "from a bottom corner to the opposite top corner?" + ("" if d.is_Integer else
-                   " Give the exact answer and a decimal."),
-                   f"${ans}{U(unit)}$", rf"$d = \sqrt{{{l}^2 + {w}^2 + {h}^2}} = \sqrt{{{l * l + w * w + h * h}}}$",
+    ans = f"{L(d)}{U(unit)}" if d.is_Integer else ctx.exact_or_decimal(L(d), float(d), unit)
+    return Problem(f"A rectangular {what} measures ${l}$ by ${w}$ by ${h}{U(unit)}$. How long is the diagonal "
+                   "from a bottom corner to the opposite top corner?"
+                   + ("" if d.is_Integer else ctx.form_note("in simplest radical form")),
+                   f"${ans}$", rf"$d = \sqrt{{{l}^2 + {w}^2 + {h}^2}} = \sqrt{{{l * l + w * w + h * h}}}$",
                    facts={"dims": (l, w, h), "d": d})
 
 
-topic("area", "math", "Geometry", "Area & perimeter",
-      "Rectangles, triangles, circles, trapezoids and composite shapes.")
+topic("area", "math", "Area & perimeter", "Area & perimeter",
+      "Rectangles, triangles, circles, trapezoids and composite shapes.", courses=['geo'], exact_forms=True, rounding=True)
 
 
-@variant("area", 1)
+@variant("area", 1, "Rectangles")
 def _area_rect(ctx: Ctx) -> Problem:
     w, h = ctx.rng.sample(range(2, 31), 2)
     return Problem(f"Find the area of a rectangle ${w}$ cm by ${h}$ cm.", f"${w * h}{U('cm^2')}$",
                    facts={"ans": w * h})
 
 
-@variant("area", 1)
+@variant("area", 1, "Rectangles")
 def _perim_rect(ctx: Ctx) -> Problem:
     w, h = ctx.rng.sample(range(2, 31), 2)
     return Problem(f"Find the perimeter of a rectangle ${w}$ m by ${h}$ m.", f"${2 * (w + h)}{U('m')}$",
                    facts={"ans": 2 * (w + h)})
 
 
-@variant("area", 1)
+@variant("area", 1, "Triangles")
 def _area_tri(ctx: Ctx) -> Problem:
     b, h = ctx.rng.randint(2, 30), ctx.rng.randint(2, 30)
     return Problem(f"Find the area of a triangle with base ${b}$ in and height ${h}$ in.",
                    f"${num(b * h / 2)}{U('in^2')}$", rf"$\frac{{1}}{{2}}({b})({h})$", facts={"ans": b * h / 2})
 
 
-@variant("area", 2)
+@variant("area", 2, "Circle area")
 def _area_circle(ctx: Ctx) -> Problem:
     r = ctx.rng.randint(2, 25)
     if ctx.rng.random() < 0.5:
-        return Problem(f"Find the area of a circle with radius ${r}$ m. Give the answer in terms of $\\pi$ and "
-                       "as a decimal.", f"${r * r}\\pi \\approx {sig(math.pi * r * r, ctx.sig)}{U('m^2')}$",
+        return Problem(f"Find the area of a circle with radius ${r}$ m." + ctx.form_note("in terms of $\\pi$"),
+                       f"${ctx.exact_or_decimal(f'{r * r}\\pi', math.pi * r * r, 'm^2')}$",
                        rf"$A = \pi r^2 = \pi({r})^2$", facts={"ans": math.pi * r * r})
-    return Problem(f"Find the area of a circle with diameter ${2 * r}$ m. Give the answer in terms of $\\pi$ "
-                   "and as a decimal.", f"${r * r}\\pi \\approx {sig(math.pi * r * r, ctx.sig)}{U('m^2')}$",
+    return Problem(f"Find the area of a circle with diameter ${2 * r}$ m." + ctx.form_note("in terms of $\\pi$"),
+                   f"${ctx.exact_or_decimal(f'{r * r}\\pi', math.pi * r * r, 'm^2')}$",
                    rf"$r = {r}$, $A = \pi r^2$", facts={"ans": math.pi * r * r})
 
 
-@variant("area", 2)
+@variant("area", 2, "Circumference")
 def _circumference(ctx: Ctx) -> Problem:
     r = ctx.rng.randint(2, 25)
     given = f"radius ${r}$ cm" if ctx.rng.random() < 0.5 else f"diameter ${2 * r}$ cm"
-    return Problem(f"Find the circumference of a circle with {given}. Give the answer in terms of $\\pi$ and as "
-                   "a decimal.", f"${2 * r}\\pi \\approx {sig(2 * math.pi * r, ctx.sig)}{U('cm')}$",
+    return Problem(f"Find the circumference of a circle with {given}." + ctx.form_note("in terms of $\\pi$"),
+                   f"${ctx.exact_or_decimal(f'{2 * r}\\pi', 2 * math.pi * r, 'cm')}$",
                    r"$C = 2\pi r = \pi d$", facts={"ans": 2 * math.pi * r})
 
 
-@variant("area", 2)
+@variant("area", 2, "Trapezoids")
 def _area_trap(ctx: Ctx) -> Problem:
     a, b, h = ctx.rng.randint(3, 15), ctx.rng.randint(16, 30), ctx.rng.randint(2, 15)
     return Problem(f"A trapezoid has parallel sides ${a}$ cm and ${b}$ cm and height ${h}$ cm. Find its area.",
@@ -615,35 +647,38 @@ def _area_trap(ctx: Ctx) -> Problem:
                    facts={"ans": (a + b) * h / 2})
 
 
-@variant("area", 3)
+@variant("area", 3, "Composite figures")
 def _area_window(ctx: Ctx) -> Problem:
     w = ctx.rng.randint(12, 40) * 2
     h = ctx.rng.randint(math.ceil(w * 0.6), w * 2)  # window-like proportions
     r = w / 2
-    area = w * h + math.pi * r * r / 2
-    per = 2 * h + w + math.pi * r
+    area_t, per_t = pi_tex(w * h, sp.Rational(w * w, 8)), pi_tex(2 * h + w, sp.Rational(w, 2))
+    area, per = w * h + math.pi * w * w / 8, 2 * h + w + math.pi * w / 2
     return Problem(f"A window is a rectangle ${w}$ in wide and ${h}$ in tall, topped by a semicircle across its "
-                   "full width. Find (a) the area of glass and (b) the length of trim around the outside.",
-                   f"(a) ${sig(area, ctx.sig)}{U('in^2')}$ (b) ${sig(per, ctx.sig)}{U('in')}$",
+                   "full width. Find (a) the area of glass and (b) the length of trim around the outside."
+                   + ctx.form_note("in terms of $\\pi$"),
+                   f"(a) ${ctx.exact_or_decimal(area_t, area, 'in^2')}$ "
+                   f"(b) ${ctx.exact_or_decimal(per_t, per, 'in')}$",
                    rf"Area $= {w}\cdot{h} + \tfrac{{1}}{{2}}\pi({num(r)})^2$; perimeter $= 2({h}) + {w} + \pi({num(r)})$",
                    facts={"ans": (area, per)})
 
 
-@variant("area", 3)
+@variant("area", 3, "Composite figures")
 def _area_track(ctx: Ctx) -> Problem:
     L_, d = ctx.rng.randint(40, 120), ctx.rng.randint(30, 70)
     r = d / 2
-    area = L_ * d + math.pi * r * r
-    per = 2 * L_ + 2 * math.pi * r
+    area_t, per_t = pi_tex(L_ * d, sp.Rational(d * d, 4)), pi_tex(2 * L_, d)
+    area, per = L_ * d + math.pi * d * d / 4, 2 * L_ + math.pi * d
     return Problem(f"A field is a rectangle ${L_}$ m long and ${d}$ m wide with a semicircle on each short end. "
-                   "Find (a) its area and (b) the distance around it.",
-                   f"(a) ${sig(area, ctx.sig)}{U('m^2')}$ (b) ${sig(per, ctx.sig)}{U('m')}$",
+                   "Find (a) its area and (b) the distance around it." + ctx.form_note("in terms of $\\pi$"),
+                   f"(a) ${ctx.exact_or_decimal(area_t, area, 'm^2')}$ "
+                   f"(b) ${ctx.exact_or_decimal(per_t, per, 'm')}$",
                    rf"The two semicircles form a circle of radius ${num(r)}$: area $= {L_}\cdot{d} + \pi({num(r)})^2$; "
                    rf"perimeter $= 2({L_}) + 2\pi({num(r)})$", facts={"ans": (area, per)})
 
 
-topic("slope", "math", "Geometry", "Slope & lines",
-      "Slope between points, equation of a line, perpendicular lines.")
+topic("slope", "math", "Lines & coordinate geometry", "Slope & lines",
+      "Slope between points, equation of a line, perpendicular lines.", courses=['alg1', 'geo'])
 
 
 def _line_tex(m: Fraction, b: Fraction) -> str:
@@ -657,7 +692,7 @@ def _two_points(ctx: Ctx):
             return x1, y1, x2, y2
 
 
-@variant("slope", 1)
+@variant("slope", 1, "Slope from two points")
 def _slope1(ctx: Ctx) -> Problem:
     x1, y1, x2, y2 = _two_points(ctx)
     m = Fraction(y2 - y1, x2 - x1)
@@ -666,7 +701,7 @@ def _slope1(ctx: Ctx) -> Problem:
                    facts={"points": [(x1, y1), (x2, y2)], "m": m})
 
 
-@variant("slope", 2)
+@variant("slope", 2, "Equation of a line")
 def _slope2(ctx: Ctx) -> Problem:
     x1, y1, x2, y2 = _two_points(ctx)
     m = Fraction(y2 - y1, x2 - x1)
@@ -677,7 +712,7 @@ def _slope2(ctx: Ctx) -> Problem:
                    facts={"points": [(x1, y1), (x2, y2)], "m": m, "b": b})
 
 
-@variant("slope", 3)
+@variant("slope", 3, "Perpendicular lines")
 def _slope3(ctx: Ctx) -> Problem:
     m = Fraction(nz(ctx.rng, -6, 6), ctx.rng.randint(1, 4))
     b0 = ctx.rng.randint(-8, 8)
@@ -690,8 +725,8 @@ def _slope3(ctx: Ctx) -> Problem:
                    facts={"m0": m, "points": [(px, py)], "m": mp, "b": b})
 
 
-topic("trig_right", "math", "Trigonometry", "Right-triangle trigonometry",
-      "SOH-CAH-TOA: missing sides and angles.")
+topic("trig_right", "math", "Right triangles", "Right-triangle trigonometry",
+      "SOH-CAH-TOA: missing sides and angles.", courses=['geo', 'precalc'], rounding=True)
 
 _SIDE_RATIO = {"hypotenuse": lambda t: 1, "opposite": math.sin, "adjacent": math.cos}
 
@@ -708,48 +743,48 @@ def _trig_side(ctx: Ctx, known: str, want: str) -> Problem:
           ("adjacent", "opposite"): r"\tan", ("opposite", "hypotenuse"): r"\sin",
           ("adjacent", "hypotenuse"): r"\cos", ("opposite", "adjacent"): r"\tan"}[(known, want)]
     return Problem(f"In a right triangle, one acute angle measures ${th}^\\circ$ and {_side_phrase(known)} is "
-                   f"${v}$ cm long. Find the length of {_side_phrase(want)}.",
-                   f"${sig(ans, ctx.sig)}{U('cm')}$", f"Use ${fn}({th}^\\circ)$",
+                   f"${v}$ cm long. Find the length of {_side_phrase(want)}." + ctx.round_note(),
+                   f"${ctx.rnd(ans)}{U('cm')}$", f"Use ${fn}({th}^\\circ)$",
                    facts={"theta": th, "known": (known, v), "want": (want, ans)})
 
 
 # Level 1: the unknown is found by multiplying; level 2: by dividing.
-variant("trig_right", 1)(lambda c: _trig_side(c, "hypotenuse", "opposite"))
-variant("trig_right", 1)(lambda c: _trig_side(c, "hypotenuse", "adjacent"))
-variant("trig_right", 1)(lambda c: _trig_side(c, "adjacent", "opposite"))
-variant("trig_right", 2)(lambda c: _trig_side(c, "opposite", "hypotenuse"))
-variant("trig_right", 2)(lambda c: _trig_side(c, "adjacent", "hypotenuse"))
-variant("trig_right", 2)(lambda c: _trig_side(c, "opposite", "adjacent"))
+variant("trig_right", 1, "Find a side (unknown in numerator)")(lambda c: _trig_side(c, "hypotenuse", "opposite"))
+variant("trig_right", 1, "Find a side (unknown in numerator)")(lambda c: _trig_side(c, "hypotenuse", "adjacent"))
+variant("trig_right", 1, "Find a side (unknown in numerator)")(lambda c: _trig_side(c, "adjacent", "opposite"))
+variant("trig_right", 2, "Find a side (unknown in denominator)")(lambda c: _trig_side(c, "opposite", "hypotenuse"))
+variant("trig_right", 2, "Find a side (unknown in denominator)")(lambda c: _trig_side(c, "adjacent", "hypotenuse"))
+variant("trig_right", 2, "Find a side (unknown in denominator)")(lambda c: _trig_side(c, "opposite", "adjacent"))
 
 
-@variant("trig_right", 3)
+@variant("trig_right", 3, "Find an angle")
 def _trig_angle(ctx: Ctx) -> Problem:
     a, b = ctx.rng.sample(range(3, 31), 2)
     if ctx.rng.random() < 0.5:
         th = math.degrees(math.atan2(a, b))
         return Problem(f"A right triangle has legs ${a}$ m (opposite angle $\\theta$) and ${b}$ m (adjacent to "
-                       "$\\theta$). Find $\\theta$ in degrees.",
-                       f"$\\theta \\approx {sig(th, ctx.sig)}^\\circ$",
+                       "$\\theta$). Find $\\theta$ in degrees." + ctx.round_note(),
+                       f"$\\theta \\approx {ctx.rnd(th)}^\\circ$",
                        rf"$\theta = \tan^{{-1}}\left(\frac{{{a}}}{{{b}}}\right)$",
                        facts={"opp": a, "adj": b, "theta": th})
     a, c = min(a, b), max(a, b)
     th = math.degrees(math.asin(a / c))
-    return Problem(f"A ${c}$ ft ramp rises ${a}$ ft. What angle does the ramp make with the ground?",
-                   f"$\\theta \\approx {sig(th, ctx.sig)}^\\circ$",
+    return Problem(f"A ${c}$ ft ramp rises ${a}$ ft. What angle does the ramp make with the ground?"
+                   + ctx.round_note(), f"$\\theta \\approx {ctx.rnd(th)}^\\circ$",
                    rf"$\theta = \sin^{{-1}}\left(\frac{{{a}}}{{{c}}}\right)$", facts={"opp": a, "hyp": c, "theta": th})
 
 
 # ======================================================== Calculus
 
 topic("derivatives", "math", "Calculus", "Derivatives",
-      "Power rule, then product/chain rules, then quotient & composite functions.")
+      "Power rule, then product/chain rules, then quotient & composite functions.", courses=['calc'])
 
 
 def _poly(ctx: Ctx, deg: int):
     return sum(nz(ctx.rng, -9, 9) * x**k for k in range(deg, -1, -1) if ctx.rng.random() < 0.8 or k == deg)
 
 
-@variant("derivatives", 1)
+@variant("derivatives", 1, "Power rule")
 def _deriv1(ctx: Ctx) -> Problem:
     f = _poly(ctx, ctx.rng.randint(2, 4))
     return Problem(f"Find $\\dfrac{{d}}{{dx}}$ of $$f(x) = {L(f)}$$", f"$f'(x) = {L(sp.diff(f, x))}$",
@@ -761,7 +796,7 @@ def _elem(ctx: Ctx):
     return ctx.rng.choice([sp.sin(k * x), sp.cos(k * x), sp.exp(k * x), sp.log(x), x ** ctx.rng.randint(2, 5)])
 
 
-@variant("derivatives", 2)
+@variant("derivatives", 2, "Product & chain rules")
 def _deriv2(ctx: Ctx) -> Problem:
     if ctx.rng.random() < 0.5:
         f = (ctx.rng.randint(1, 5) * x ** ctx.rng.randint(1, 3)) * _elem(ctx)
@@ -771,7 +806,7 @@ def _deriv2(ctx: Ctx) -> Problem:
     return Problem(f"Differentiate: $$f(x) = {L(f)}$$", f"$f'(x) = {L(df)}$", facts={"f": f, "df": df})
 
 
-@variant("derivatives", 3)
+@variant("derivatives", 3, "Quotient & composite functions")
 def _deriv3(ctx: Ctx) -> Problem:
     if ctx.rng.random() < 0.5:
         f = _poly(ctx, 1) / (x**2 + ctx.rng.randint(1, 9))
@@ -782,17 +817,17 @@ def _deriv3(ctx: Ctx) -> Problem:
 
 
 topic("integrals", "math", "Calculus", "Integrals",
-      "Indefinite polynomial integrals, u-substitution and definite integrals.")
+      "Indefinite polynomial integrals, u-substitution and definite integrals.", courses=['calc'])
 
 
-@variant("integrals", 1)
+@variant("integrals", 1, "Polynomials")
 def _int1(ctx: Ctx) -> Problem:
     f = _poly(ctx, ctx.rng.randint(1, 3))
     F = sp.integrate(f, x)
     return Problem(f"Evaluate: $$\\int \\left({L(f)}\\right)\\,dx$$", f"${L(F)} + C$", facts={"f": f, "F": F})
 
 
-@variant("integrals", 2)
+@variant("integrals", 2, "u-substitution")
 def _int2(ctx: Ctx) -> Problem:
     a, b = ctx.rng.randint(1, 4), nz(ctx.rng, -5, 5)
     g = a * x**2 + b if ctx.rng.random() < 0.5 else a * x + b
@@ -808,7 +843,7 @@ def _int2(ctx: Ctx) -> Problem:
                    f"Let $u = {L(g)}$, $du = {L(sp.diff(g, x))}\\,dx$", facts={"f": f, "F": F})
 
 
-@variant("integrals", 3)
+@variant("integrals", 3, "Definite integrals")
 def _int3(ctx: Ctx) -> Problem:
     f = _poly(ctx, ctx.rng.randint(2, 3))
     lo = ctx.rng.randint(-3, 2)
@@ -818,11 +853,11 @@ def _int3(ctx: Ctx) -> Problem:
                    f"Antiderivative: ${L(sp.integrate(f, x))}$", facts={"f": f, "lo": lo, "hi": hi, "val": val})
 
 
-topic("limits", "math", "Calculus", "Limits",
-      "Algebraic limits, removable discontinuities and limits at infinity.")
+topic("limits", "math", "Limits", "Limits",
+      "Algebraic limits, removable discontinuities and limits at infinity.", courses=['precalc', 'calc'])
 
 
-@variant("limits", 1)
+@variant("limits", 1, "Direct substitution")
 def _lim1(ctx: Ctx) -> Problem:
     f = _poly(ctx, 2)
     a = ctx.rng.randint(-4, 4)
@@ -830,7 +865,7 @@ def _lim1(ctx: Ctx) -> Problem:
                    facts={"expr": f, "a": a, "val": f.subs(x, a)})
 
 
-@variant("limits", 2)
+@variant("limits", 2, "Factor and cancel")
 def _lim2(ctx: Ctx) -> Problem:
     a, b = ctx.rng.randint(-6, 6), ctx.rng.randint(-6, 6)
     c = ctx.rng.randint(-6, 6)
@@ -843,14 +878,17 @@ def _lim2(ctx: Ctx) -> Problem:
                    facts={"expr": num_ / den, "a": a, "val": val})
 
 
-@variant("limits", 3)
-def _lim3(ctx: Ctx) -> Problem:
-    if ctx.rng.random() < 0.5:
-        k = ctx.rng.randint(2, 9)
-        m = ctx.rng.randint(1, 5)
-        return Problem(f"Evaluate: $$\\lim_{{x \\to 0}} \\frac{{\\sin({k}x)}}{{{L(m * x)}}}$$",
-                       f"${L(sp.Rational(k, m))}$",
-                       facts={"expr": sp.sin(k * x) / (m * x), "a": 0, "val": sp.Rational(k, m)})
+@variant("limits", 3, "sin(x)/x limits")
+def _lim_trig(ctx: Ctx) -> Problem:
+    k = ctx.rng.randint(2, 9)
+    m = ctx.rng.randint(1, 5)
+    return Problem(f"Evaluate: $$\\lim_{{x \\to 0}} \\frac{{\\sin({k}x)}}{{{L(m * x)}}}$$",
+                   f"${L(sp.Rational(k, m))}$",
+                   facts={"expr": sp.sin(k * x) / (m * x), "a": 0, "val": sp.Rational(k, m)})
+
+
+@variant("limits", 3, "Limits at infinity")
+def _lim_infinity(ctx: Ctx) -> Problem:
     deg = ctx.rng.randint(2, 3)
     p, q = _poly(ctx, deg), _poly(ctx, deg)
     val = sp.limit(p / q, x, sp.oo)
@@ -861,7 +899,7 @@ def _lim3(ctx: Ctx) -> Problem:
 # ======================================================== Statistics
 
 topic("stats", "math", "Statistics", "Mean, median, mode & spread",
-      "Measures of center and spread for a data set.")
+      "Measures of center and spread for a data set.", courses=['alg1'], rounding=True)
 
 
 def _dataset(ctx: Ctx, n: int, hi: int) -> list[int]:
@@ -875,7 +913,7 @@ def _data_tex(data):
     return ",\\ ".join(map(str, data))
 
 
-@variant("stats", 1)
+@variant("stats", 1, "Median, mode & range")
 def _stats1(ctx: Ctx) -> Problem:
     while True:
         data = _dataset(ctx, ctx.rng.randint(5, 9), 20)
@@ -888,21 +926,22 @@ def _stats1(ctx: Ctx) -> Problem:
                    f"Sorted: ${_data_tex(sorted(data))}$", facts={"data": data})
 
 
-@variant("stats", 2)
+@variant("stats", 2, "Mean & median")
 def _stats2(ctx: Ctx) -> Problem:
     data = _dataset(ctx, ctx.rng.randint(6, 9), 50)
     mean = Fraction(sum(data), len(data))
-    return Problem(f"Find the mean and median of $${_data_tex(data)}$$",
-                   f"Mean $= {sig(float(mean), ctx.sig + 1) if mean.denominator > 1 else mean}$, "
+    exact = mean * 10**ctx.places == int(mean * 10**ctx.places)  # terminates within the rounding place
+    return Problem(f"Find the mean and median of $${_data_tex(data)}$$" + ("" if exact else ctx.round_note()),
+                   f"Mean ${'=' if exact else r'\approx'} {num_frac(mean) if exact else ctx.rnd(float(mean))}$, "
                    f"median $= {num(statistics.median(data))}$",
                    f"Sum $= {sum(data)}$, $n = {len(data)}$", facts={"data": data})
 
 
-@variant("stats", 3)
+@variant("stats", 3, "Standard deviation")
 def _stats3(ctx: Ctx) -> Problem:
     data = _dataset(ctx, ctx.rng.randint(5, 8), 30)
     mean = statistics.fmean(data)
     sd = statistics.pstdev(data)
-    return Problem(f"Find the mean and the population standard deviation of $${_data_tex(data)}$$",
-                   f"$\\mu \\approx {sig(mean, ctx.sig)}$, $\\sigma \\approx {sig(sd, ctx.sig)}$",
+    return Problem(f"Find the mean and the population standard deviation of $${_data_tex(data)}$$"
+                   + ctx.round_note(), f"$\\mu \\approx {ctx.rnd(mean)}$, $\\sigma \\approx {ctx.rnd(sd)}$",
                    rf"$\sigma = \sqrt{{\frac{{\sum (x_i - \mu)^2}}{{n}}}}$", facts={"data": data})

@@ -21,7 +21,7 @@ import sympy as sp
 
 from app.ai import _numbers_in
 from app.generators import TOPICS, generate_set
-from app.generators.core import is_nice_problem, norm_question, num, sig
+from app.generators.core import COURSE_UNITS, COURSES, is_nice_problem, norm_question, num, sig, variants_for
 from app.safe_eval import safe_eval
 
 x, y = sp.symbols("x y")
@@ -32,11 +32,13 @@ ids = [f"{t}-L{lv}" for t, lv in LEVELS]
 
 
 @cache
-def sample(topic: str, level: int, g: float = 9.8, nice: bool = False, sections: int = 8, size: int = 10):
+def sample(topic: str, level: int, g: float = 9.8, nice: bool = False, form: str = "both", places: int = 1,
+           sections: int = 8, size: int = 10):
     """Problems from several independent 10-problem sections."""
     out = []
     for s in range(sections):
-        out.append(generate_set(topic, level, size, random.Random(f"q{topic}{level}{g}{nice}{s}"), g=g, nice=nice))
+        out.append(generate_set(topic, level, size, random.Random(f"q{topic}{level}{g}{nice}{form}{places}{s}"),
+                                g=g, nice=nice, form=form, places=places))
     return out
 
 
@@ -51,6 +53,28 @@ def close(a, b, rel=1e-6):
 def shown(value: float, text: str, rel=0.006) -> bool:
     """Is ``value`` displayed in ``text`` (allowing for rounding to 3 sig figs)?"""
     return any(math.isclose(n, value, rel_tol=rel, abs_tol=1e-9) for n in _numbers_in(text))
+
+
+def shown_r(value: float, text: str, places: int) -> bool:
+    """Is ``value`` displayed in ``text``, rounded to ``places`` decimal places?"""
+    tol = 0.5 * 10**-places + 1e-9
+    return any(abs(n - value) <= tol for n in _numbers_in(text))
+
+
+PI_TERM = re.compile(r"(?:(\d+) \+ )?(?:\\frac\{(\d+)\}\{(\d+)\}|(\d+))?\\pi")
+
+
+def pi_values(text: str) -> list[float]:
+    r"""Values of exact answers like 121\pi or 806 + \frac{169}{2}\pi in ``text``."""
+    out = []
+    for m in PI_TERM.finditer(text):
+        coef = Fraction(int(m[2]), int(m[3])) if m[2] else Fraction(int(m[4] or 1))
+        out.append(int(m[1] or 0) + float(coef) * math.pi)
+    return out
+
+
+def outside_math(text: str) -> str:
+    return re.sub(r"\$\$.+?\$\$|\$[^$]+\$", "", text, flags=re.S)
 
 
 # =================================================================== variety
@@ -103,6 +127,8 @@ def test_wording(topic, level):
         assert not re.search(r"(?<![\d.])1 ?x\b", q), q  # coefficient 1 should be implicit
         for bad in ("side hypotenuse", "table-top", "None", "nan"):
             assert bad not in q and bad not in p.answer, (bad, q)
+        for text in (q, p.answer, p.solution):
+            assert "\\" not in outside_math(text), f"LaTeX outside $...$ would show as raw text: {text}"
 
 
 # =================================================================== math correctness
@@ -150,10 +176,21 @@ def check_math(p) -> str:
         assert all(e.subs({x: f["x"], y: f["y"]}) is sp.true for e in f["eqs"])
         assert all(sp.latex(e) in q for e in f["eqs"]) and f"x = {f['x']}" in a and f"y = {f['y']}" in a
         return "system"
+    form, places = f["form"], f["places"]
     if "poly" in f:
         assert sp.latex(f["poly"]) in q and len(set(f["roots"])) == 2
         assert all(sp.simplify(f["poly"].subs(x, r)) == 0 for r in f["roots"])
-        assert all(sp.latex(sp.together(r)) in a or sp.latex(r) in a for r in f["roots"]), a
+        if "pm" in f:  # quadratic formula: (B ± K√M)/D, reduced
+            B, K, M, D = f["pm"]
+            pm_roots = sorted([(B - K * math.sqrt(M)) / D, (B + K * math.sqrt(M)) / D])
+            assert all(close(u, float(v)) for u, v in zip(pm_roots, f["roots"]))
+            assert math.gcd(math.gcd(B, K), D) == 1
+            if form != "decimal":
+                assert f"\\sqrt{{{M}}}" in a and r"\pm" in a, a
+            if form != "exact":
+                assert all(shown_r(float(r), a, places) for r in f["roots"]), a
+        else:
+            assert all(sp.latex(r) in a for r in f["roots"]), a
         return "quadratic"
     if "q_expr" in f:
         assert sp.simplify(f["q_expr"] - f["ans_expr"]) == 0 and sp.latex(f["ans_expr"]) in a
@@ -162,7 +199,7 @@ def check_math(p) -> str:
     if "base" in f:
         b, arg, val = f["base"], f["arg"], f["x"]
         assert close(sp.N(sp.sympify(b) ** val), sp.N(arg), rel=1e-9)
-        assert shown(float(val), a, rel=0.006) or sp.latex(sp.nsimplify(val)) in a
+        assert shown_r(float(val), a, places) or sp.latex(sp.nsimplify(val)) in a
         return "log"
     if "lhs" in f:
         assert close(sp.N(f["lhs"].subs(x, f["x"])), f["rhs"])
@@ -175,7 +212,10 @@ def check_math(p) -> str:
         return "converse"
     if "dims" in f:
         assert sp.simplify(f["d"] ** 2 - sum(d * d for d in f["dims"])) == 0
-        assert sp.latex(f["d"]) in a
+        if f["d"].is_Integer or form != "decimal":
+            assert sp.latex(f["d"]) in a
+        if not f["d"].is_Integer and form != "exact":
+            assert shown_r(float(f["d"]), a, places)
         return "box diagonal"
     if "ladder" in q and {"a", "b"} <= f.keys():
         assert float(f["a"]) <= 0.6 * float(f["b"]), f"ladder too flat: {q}"
@@ -183,8 +223,14 @@ def check_math(p) -> str:
         assert 1.3 <= float(f["b"]) / float(f["a"]) <= 1.9, f"odd TV shape: {q}"
     if {"a", "b", "c"} <= f.keys():
         assert sp.simplify(sp.sympify(f["a"]) ** 2 + sp.sympify(f["b"]) ** 2 - sp.sympify(f["c"]) ** 2) == 0
-        unknown = [v for v in (f["a"], f["b"], f["c"]) if not shown(float(v), q, rel=1e-9)]
-        assert len(unknown) == 1 and shown(float(unknown[0]), a), (q, a)
+        unknown = [sp.sympify(v) for v in (f["a"], f["b"], f["c"]) if not shown(float(v), q, rel=1e-9)]
+        assert len(unknown) == 1, q
+        u = unknown[0]
+        if u.is_Integer:
+            assert shown(float(u), a, rel=1e-9), a
+        else:
+            assert (form == "decimal") != (sp.latex(u) in a), a  # exact form present unless decimal-only
+            assert (form == "exact") != shown_r(float(u), a, places), a
         return "pythagorean"
     if "points" in f:
         m = f["m"]
@@ -202,12 +248,12 @@ def check_math(p) -> str:
         t = math.radians(f["theta"])
         (ks, kv), (ws, wv) = f["known"], f["want"]
         assert close(wv / kv, ratio[ws](t) / ratio[ks](t))
-        assert shown(wv, a)
+        assert shown_r(wv, a, places)
         return "trig side"
     if "theta" in f:
         t = math.radians(f["theta"])
         assert close(math.tan(t), f["opp"] / f["adj"]) if "adj" in f else close(math.sin(t), f["opp"] / f["hyp"])
-        assert shown(f["theta"], a)
+        assert shown_r(f["theta"], a, places)
         return "trig angle"
     if "df" in f:
         assert sp.simplify(sp.diff(f["f"], x) - f["df"]) == 0
@@ -241,10 +287,10 @@ def check_math(p) -> str:
             top = max(counts.values())
             assert [v for v in counts if counts[v] == top] == [int(re.search(r"mode \$(\d+)\$", a)[1])]
         if "\\mu" in a or "Mean" in a:
-            assert shown(sum(d) / n, a)
+            assert shown_r(sum(d) / n, a, places)
         if "sigma" in a:
             mu = sum(d) / n
-            assert shown(math.sqrt(sum((v - mu) ** 2 for v in d) / n), a)
+            assert shown_r(math.sqrt(sum((v - mu) ** 2 for v in d) / n), a, places)
         return "stats"
     if p.topic == "percent":
         if "n" in f:
@@ -260,17 +306,75 @@ def check_math(p) -> str:
         n = int(re.search(r"\\ln (\d+)", q)[1])
         assert a == f"${n}$"
         return "log identity"
-    if "ans" in f:  # area/perimeter: answer displayed matches the computed value
+    if "ans" in f:  # area/perimeter: exact (π) and decimal answers both match the computed value
         vals = f["ans"] if isinstance(f["ans"], tuple) else (f["ans"],)
-        assert all(shown(v, a) for v in vals), a
+        pis = pi_values(a)
+        for v in vals:
+            exact = any(close(v, pv) for pv in pis) or shown(v, a, rel=1e-9)
+            decimal = shown_r(v, a, places)
+            assert {"exact": exact, "decimal": decimal and not pis, "both": exact and decimal}[form], (form, a)
         return "displayed value"
     raise AssertionError(f"no correctness check for {p.topic}: {q}")
 
 
+FORMS = [("both", 1), ("exact", 1), ("decimal", 2), ("decimal", 0)]
+
+
 @pytest.mark.parametrize("topic,level", MATH, ids=[f"{t}-L{lv}" for t, lv in MATH])
 def test_math_answers_are_correct(topic, level):
-    for p in problems(topic, level):
-        check_math(p)
+    t = TOPICS[topic]
+    for form, places in (FORMS if t.exact_forms or t.rounding else FORMS[:1]):
+        for p in problems(topic, level, form=form, places=places):
+            check_math(p)
+
+
+@pytest.mark.parametrize("topic", [t for t in TOPICS if TOPICS[t].exact_forms or TOPICS[t].rounding])
+@pytest.mark.parametrize("form,places", FORMS)
+def test_answer_forms(topic, form, places):
+    place = {0: "whole number", 1: "tenth", 2: "hundredth", 3: "thousandth"}[places]
+    for level in TOPICS[topic].variants:
+        for p in problems(topic, level, form=form, places=places):
+            decimals = re.findall(r"\\approx (-?\d+(?:\.(\d+))?)", p.answer)
+            if decimals:  # every rounded value uses the requested place, and the question says so
+                assert all(len(d) == places for _, d in decimals), p.answer
+                assert f"nearest {place}" in p.question, p.question
+            if form == "exact" and ("\\pi" in p.answer or "\\sqrt" in p.answer):
+                assert not decimals and "Round" not in p.question and "exact" in p.question, p.question
+            if form == "decimal":
+                assert "\\pi" not in p.answer and "\\sqrt" not in p.answer, p.answer
+
+
+# =================================================================== courses & skills
+
+def test_every_topic_has_courses_and_skills():
+    for t in TOPICS.values():
+        assert t.courses and all(c in COURSES for c in t.courses)
+        assert t.skills and all(s.levels for s in t.skills.values())
+        for level, vs in t.variants.items():
+            assert all(v.skill in t.skills and level in t.skills[v.skill].levels for v in vs)
+    for course in COURSES:
+        assert any(course in t.courses for t in TOPICS.values()), f"{course} has no topics"
+        units = {t.category for t in TOPICS.values() if course in t.courses}
+        assert units == set(COURSE_UNITS[course]), f"{course} unit order out of date: {units ^ set(COURSE_UNITS[course])}"
+
+
+def test_chosen_skills_only():
+    probs = generate_set("pythagorean", 2, 12, random.Random(3), skills=["find_a_leg"])
+    assert {p.skill for p in probs} == {"find_a_leg"}
+    # A skill that only exists at another level is used at its own level.
+    probs = generate_set("quadratics", 1, 6, random.Random(3), skills=["quadratic_formula", "factor_x_bx_c"])
+    assert {p.skill for p in probs} == {"quadratic_formula", "factor_x_bx_c"}
+    assert all("pm" in p.facts for p in probs if p.skill == "quadratic_formula")
+    with pytest.raises(KeyError):
+        variants_for("quadratics", 2, ["no_such_skill"])
+
+
+@pytest.mark.parametrize("topic", sorted(TOPICS))
+def test_every_skill_generates_alone(topic):
+    for sid in TOPICS[topic].skills:
+        for level in (1, 3):
+            probs = generate_set(topic, level, 4, random.Random(sid), skills=[sid])
+            assert len(probs) == 4 and {p.skill for p in probs} == {sid}
 
 
 # =================================================================== physics correctness
@@ -419,7 +523,8 @@ def test_physics(topic, level, g, nice):
 @pytest.mark.parametrize("topic", sorted({t for t, _ in PHYSICS}))
 def test_g_is_stated_exactly_when_it_matters(topic):
     for level in TOPICS[topic].variants:
-        for fn in TOPICS[topic].variants[level]:
+        for v in TOPICS[topic].variants[level]:
+            fn = v.fn
             for s in range(15):
                 p98 = fn(_ctx(s, level, 9.8))
                 p10 = fn(_ctx(s, level, 10))

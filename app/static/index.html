@@ -28,11 +28,7 @@
   <section class="panel catalog no-print">
     <h2>Topics</h2>
     <input id="topic-search" type="search" placeholder="Search topics…" autocomplete="off">
-    <div class="chips" id="subject-filter">
-      <button class="chip active" data-subject="all">All</button>
-      <button class="chip" data-subject="math">Math</button>
-      <button class="chip" data-subject="physics">Physics</button>
-    </div>
+    <div class="chips wrap" id="course-filter" role="group" aria-label="Filter by course"></div>
     <div id="topic-list" class="topic-list"></div>
     <div class="custom-topic">
       <label for="custom-topic-input">Custom topic <span class="tag ai">AI</span></label>
@@ -140,6 +136,24 @@
       <label>Significant figures (decimal answers) <input name="sig_figs" type="number" min="1" max="6"></label>
       <label class="check"><input type="checkbox" name="show_name_date"> Name / date lines</label>
       <label class="check"><input type="checkbox" name="key_solutions"> Show worked steps in answer key</label>
+    </div>
+
+    <h2>Math defaults</h2>
+    <p class="hint">For topics with exact answers (π, radicals) or decimals. Each math section can override these.</p>
+    <div class="grid2">
+      <label>Answers
+        <select name="math_answer_form">
+          <option value="both">Exact and decimal</option>
+          <option value="exact">Exact (π, simplest radical form)</option>
+          <option value="decimal">Decimal only</option>
+        </select>
+      </label>
+      <label>Round decimals to the nearest
+        <select name="math_places">
+          <option value="0">whole number</option><option value="1">tenth</option>
+          <option value="2">hundredth</option><option value="3">thousandth</option>
+        </select>
+      </label>
     </div>
 
     <h2>Physics defaults</h2>

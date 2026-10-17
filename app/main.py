@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import storage
 from .ai import AIError, generate_ai, list_models
 from .generators import TOPICS, generate_set
-from .generators.core import norm_question
+from .generators.core import COURSE_UNITS, COURSES, PLACE_NAMES, norm_question
 
 log = logging.getLogger("worksheets")
 STATIC = Path(__file__).parent / "static"
@@ -114,6 +114,12 @@ def topics():
     return [t.meta() for t in TOPICS.values()]
 
 
+@app.get("/api/courses")
+def courses():
+    return [{"id": cid, "name": name, "subject": subject, "units": COURSE_UNITS[cid]}
+            for cid, (name, subject) in COURSES.items()]
+
+
 # ------------------------------------------------------------------ generation
 
 class Section(BaseModel):
@@ -125,9 +131,13 @@ class Section(BaseModel):
     difficulty: int = Field(2, ge=1, le=3)
     source: Literal["builtin", "ai"] = "builtin"
     ai_prompt: str = Field("", max_length=1000)
-    # Physics options; None = use the Setup page default.
-    g: Literal[9.8, 10] | None = None
-    nice: bool | None = None
+    # Only these skills (ids from /api/topics); None or empty = every skill at the difficulty.
+    skills: list[str] | None = Field(None, max_length=50)
+    # Options below: None = use the Setup page default.
+    g: Literal[9.8, 10] | None = None  # physics
+    nice: bool | None = None  # physics: whole-number values
+    answer_form: Literal["both", "exact", "decimal"] | None = None  # math: exact (π, radicals) and/or decimal
+    places: Literal[0, 1, 2, 3] | None = None  # math: decimal places to round to
 
 
 class GenerateRequest(BaseModel):
@@ -141,19 +151,39 @@ class ProblemRequest(Section):
     avoid: list[str] = Field(default_factory=list, max_length=1000)
 
 
-def _physics_options(sec: Section, settings: dict) -> tuple[float, bool]:
-    g = sec.g if sec.g is not None else settings["physics_g"]
-    nice = sec.nice if sec.nice is not None else settings["physics_nice"]
-    return float(g), bool(nice)
+def _options(sec: Section, settings: dict) -> dict:
+    """Generation options for a section: its own choices, else the Setup page defaults."""
+    def pick(value, key):
+        return value if value is not None else settings[key]
+    return {"sig": int(settings["sig_figs"]), "g": float(pick(sec.g, "physics_g")),
+            "nice": bool(pick(sec.nice, "physics_nice")), "form": pick(sec.answer_form, "math_answer_form"),
+            "places": int(pick(sec.places, "math_places"))}
+
+
+def _ai_instructions(sec: Section, opts: dict) -> str:
+    extra = sec.ai_prompt
+    if sec.subject == "physics":
+        extra += f" Use g = {opts['g']:g} m/s^2 and state it in problems that need it."
+        if opts["nice"]:
+            extra += " Choose simple values so that every answer is a whole number or has one decimal place."
+    else:
+        place = PLACE_NAMES[opts["places"]]
+        extra += {"exact": " Give exact answers (simplest radical form, in terms of pi) rather than decimals.",
+                  "decimal": f" Round decimal answers to the nearest {place}.",
+                  "both": f" Where an answer has an exact form (radical or pi), give it and a decimal "
+                          f"rounded to the nearest {place}."}[opts["form"]]
+    return extra.strip()
 
 
 async def _make(sec: Section, rng: random.Random, settings: dict, count: int, seen: set[str]) -> list[dict]:
-    g, nice = _physics_options(sec, settings)
+    opts = _options(sec, settings)
     if sec.source == "builtin":
         if sec.topic not in TOPICS:
             raise HTTPException(400, f"Unknown topic {sec.topic!r} (custom topics need the AI source)")
-        probs = generate_set(sec.topic, sec.difficulty, count, rng, sig=int(settings["sig_figs"]),
-                             g=g, nice=nice, seen=seen)
+        try:
+            probs = generate_set(sec.topic, sec.difficulty, count, rng, skills=sec.skills, seen=seen, **opts)
+        except KeyError as e:
+            raise HTTPException(400, str(e).strip("'\"")) from e
         return [p.to_dict() for p in probs]
     if sec.topic == "custom":
         if not sec.custom_topic.strip():
@@ -161,16 +191,14 @@ async def _make(sec: Section, rng: random.Random, settings: dict, count: int, se
         topic_text = sec.custom_topic
     elif sec.topic in TOPICS:
         t = TOPICS[sec.topic]
-        topic_text = f"{t.name} ({t.description})"
+        chosen = [t.skills[s].label for s in sec.skills or [] if s in t.skills]
+        topic_text = f"{t.name}" + (f", specifically: {'; '.join(chosen)}" if chosen else f" ({t.description})")
+        topic_text += f", for a high school {' / '.join(COURSES[c][0] for c in t.courses)} class"
     else:
         raise HTTPException(400, f"Unknown topic {sec.topic!r}")
-    extra = sec.ai_prompt
-    if sec.subject == "physics":
-        extra += f" Use g = {g:g} m/s^2 and state it in problems that need it."
-        if nice:
-            extra += " Choose simple values so that every answer is a whole number or has one decimal place."
+    extra = _ai_instructions(sec, opts)
     probs = await generate_ai(settings, subject=sec.subject, topic=topic_text, difficulty=sec.difficulty,
-                              count=count, extra=extra.strip())
+                              count=count, extra=extra)
     for p in probs:
         p.topic = sec.topic
         seen.add(norm_question(p.question))
@@ -232,6 +260,8 @@ class SettingsIn(BaseModel):
     sig_figs: int | None = Field(None, ge=1, le=6)
     physics_g: Literal[9.8, 10] | None = None
     physics_nice: bool | None = None
+    math_answer_form: Literal["both", "exact", "decimal"] | None = None
+    math_places: Literal[0, 1, 2, 3] | None = None
 
     @field_validator("ollama_url")
     @classmethod

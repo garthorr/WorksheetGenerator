@@ -3,9 +3,17 @@
 A dockerized web app for building math and physics worksheets with answer keys.
 Served at **https://worksheets.tastymath.com** through Traefik.
 
-- **Pick topics** from a catalog of 30 built-in topics (arithmetic → calculus,
-  kinematics → optics), or type any **custom topic** and have your Ollama model
-  write the problems.
+- **Pick topics by course:** Algebra 1, Geometry, Algebra 2, Precalculus, Conceptual
+  Physics and AP Physics 1, with units in teaching order (calculus sits under
+  "Beyond Precalculus"). You can also type any **custom topic** and have your Ollama
+  model write the problems.
+- **Pick skills:** each topic is made of named skills (e.g. *Factor ax² + bx + c*,
+  *Simplest radical form*, *Free fall*) marked E/M/H for difficulty. A section uses
+  every skill at its difficulty, or exactly the skills you click.
+- **Answer forms for math:** exact answers (in terms of π, simplest radical form),
+  decimals, or both, rounded to the nearest whole number, tenth, hundredth or
+  thousandth. The question tells students which form to use. Physics answers use
+  significant figures.
 - **Every problem has an answer.** Built-in topics compute the answer in code
   (sympy for algebra and calculus), so those answers are always correct. AI answers
   are checked automatically (see below).
@@ -18,7 +26,8 @@ Served at **https://worksheets.tastymath.com** through Traefik.
   through every problem type in their topic, and answers rarely repeat within a section.
 - **Physics options:** g = 9.8 or 10 m/s² (stated in the problem when it's 10), and a
   **whole-number** mode for conceptual physics with simple givens and answers. Set the
-  defaults on the Setup page; each physics section can override them.
+  defaults on the Setup page; each physics section can override them. Sections added
+  from the Conceptual Physics view start with g = 10 and whole numbers.
 
 ## Why not use AI for everything?
 
@@ -86,17 +95,23 @@ and open http://localhost:8080.
 Topics live in `app/generators/math_gen.py` and `physics_gen.py`:
 
 ```python
-topic("my_topic", "physics", "Mechanics", "Hooke's law", "Spring force and stretch.")
+topic("springs", "physics", "Oscillations", "Springs", "Hooke's law and spring energy.",
+      courses=["conceptual", "ap1"])
 
-@variant("my_topic", 1)          # difficulty 1 = easy, 2 = medium, 3 = hard
+@variant("springs", 1, "Hooke's law")   # level 1 = easy, 2 = medium, 3 = hard; the label is the skill
 def _hooke(ctx: Ctx) -> Problem:
     k, x = step(ctx.rng, 50, 500, 10), step(ctx.rng, 0.01, 0.3, 0.01)
-    return Problem(f"A spring with $k = {num(k)}{U('N/m')}$ is stretched ${num(x)}{U('m')}$. Find the force.",
-                   f"$F = {sig(k * x, ctx.sig)}{U('N')}$", "$F = kx$")
+    return P(f"A spring with $k = {num(k)}{U('N/m')}$ is stretched ${num(x)}{U('m')}$. Find the force.",
+             f"$F = {ctx.fmt(k * x)}{U('N')}$", "$F = kx$", {"k": k, "x": x}, {"F": k * x})
 ```
 
-The topic appears in the GUI catalog automatically. Physics variants should pass
-their givens and answers to `facts` (see the `P(...)` helper in `physics_gen.py`).
+The topic appears in the catalog automatically. A new unit (here "Oscillations") also
+needs a place in `COURSE_UNITS` in `core.py`, which sets each course's teaching order;
+the tests remind you. Physics variants pass their givens and answers through `P(...)`
+so the tests can check them, and need a physics-law check in `LAWS` in
+`tests/test_quality.py`. Math answers with exact forms should use `ctx.form_note()`
+and `ctx.exact_or_decimal()`, and plain decimals should use `ctx.round_note()` and
+`ctx.rnd()`.
 
 ## Quality checks
 
@@ -113,6 +128,9 @@ their givens and answers to `facts` (see the `P(...)` helper in `physics_gen.py`
   proportions, wave speeds and densities match real materials, and currents stay in range.
 - **Varied:** 30-problem sections never repeat, sections cover every problem type,
   and answers rarely repeat.
+- **Every answer form and skill works:** math answers are checked in exact, decimal and
+  combined forms at several rounding places, every skill generates on its own, and
+  every topic belongs to a course.
 - **Well-formed:** clean wording, g is stated exactly when it matters, whole-number mode
   delivers simple values, and every formula renders in KaTeX (`tests/test_katex.py`).
 
