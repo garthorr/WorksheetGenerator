@@ -59,3 +59,21 @@ def test_unbalanced_dollar_repaired():
     assert _fix_latex("$24.00 feet") == "24.00 feet"
     assert _fix_latex("$x = 3$ and $$y$$") == "$x = 3$ and $$y$$"
     assert _fix_latex(r"costs \$5") == r"costs \$5"
+
+
+def test_ai_text_with_latex_outside_math_is_tidied():
+    # real model output: LaTeX in prose, a double-escaped line break, a bare formula answer
+    sol = _fix_latex(r"Gravity along the incline is mg\sin(45°), so a = 10 \times 0.707 = 7.1 m/s².\n2) Done")
+    assert sol == "Gravity along the incline is mg sin(45°), so a = 10 × 0.707 = 7.1 m/s².\n2) Done"
+    assert _fix_latex(r"a = g\sin(45°) = 7.1 m/s^2") == r"$a = g\sin(45^\circ) = 7.1 m/s^2$"
+    assert _fix_latex(r"KE = \frac{1}{2}mv^{2} is the energy of the moving cart") == \
+        "KE = (1/2)mv² is the energy of the moving cart"
+    # proper math and LaTeX commands that start with n are left alone
+    assert _fix_latex(r"$\nu = 440$ Hz") == r"$\nu = 440$ Hz"
+    assert _fix_latex("400 K") == "400 K"
+
+
+def test_verify_uses_section_constants():
+    item = {"given": {"m": 2}, "answer_formula": "m*g", "answer_value": 20, "answer": "20 N"}
+    assert _verify(item)[0] == "error"
+    assert _verify(item, {"g": 10})[0] == "pass"

@@ -49,9 +49,46 @@ function el(tag, attrs = {}, ...children) {
   return e;
 }
 
+// ---- Clean-up for AI text that left LaTeX outside $...$ (mirrors _tidy_math in app/ai.py, which
+// fixes new problems on the server; this keeps worksheets saved before that fix readable).
+const UNICODE = { times: "×", cdot: "·", pm: "±", mp: "∓", approx: "≈", leq: "≤", le: "≤", geq: "≥", ge: "≥",
+  neq: "≠", ne: "≠", circ: "°", degree: "°", infty: "∞", to: "→", rightarrow: "→", Rightarrow: "⇒", implies: "⇒",
+  pi: "π", theta: "θ", mu: "μ", Delta: "Δ", delta: "δ", alpha: "α", beta: "β", gamma: "γ", omega: "ω", Omega: "Ω",
+  lambda: "λ", rho: "ρ", sigma: "σ", tau: "τ", phi: "φ", epsilon: "ε", left: "", right: "", quad: " ", qquad: " ",
+  displaystyle: "" };
+const SUPERSCRIPT = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", "-": "⁻", "+": "⁺" };
+
+function latexToText(t) {
+  for (let i = 0; i < 3; i++) {
+    t = t.replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/g, (m, a, b, off, all) => {
+      const simple = /^[\w.]+$/.test(a) && /^[\w.]+$/.test(b);
+      const f = simple ? `${a}/${b}` : `(${a})/(${b})`;
+      return simple && /[\w(]/.test(all[off + m.length] || "") ? `(${f})` : f;
+    });
+    t = t.replace(/\\sqrt\{([^{}]*)\}/g, (m, a) => (/^[\w.]+$/.test(a) ? `√${a}` : `√(${a})`));
+    t = t.replace(/\\(?:text|mathrm|mathbf|textbf|operatorname)\{([^{}]*)\}/g, "$1");
+  }
+  t = t.replace(/\^\{?([-+]?\d+)\}?/g, (m, d) => [...d].map((c) => SUPERSCRIPT[c]).join(""));
+  t = t.replace(/\^\{([^{}]*)\}/g, "^($1)").replace(/_\{([^{}]*)\}/g, "_$1").replace(/\\[,;:! ]/g, " ");
+  t = t.replace(/\\([A-Za-z]+)/g, (m, name, off, all) => {
+    const fn = ["sin", "cos", "tan", "ln", "log"].includes(name);
+    return (fn && off && /\w/.test(all[off - 1]) ? " " : "") + (UNICODE[name] ?? name);
+  });
+  return t.replace(/\\(?!\$)/g, ""); // keep escaped dollars (\$5)
+}
+
+function tidyMath(s) {
+  s = s.replace(/\\n(?!(?:u|eq|e|ot|abla|eg|i|leq|geq|mid|parallel|ewline|oindent)\b)/g, "\n");
+  if (!s.includes("$") && /\\[A-Za-z]+|\^|_\{/.test(s)) {
+    const words = s.replace(/\\[A-Za-z]+(\{[^{}]*\})?/g, " ").match(/\b[A-Za-z]{4,}\b/g) || [];
+    if (words.length <= 2 && !s.includes("\n") && s.length <= 80) return `$${s.trim().replace(/°/g, "^\\circ")}$`;
+  }
+  return s.replace(/(\$\$[\s\S]+?\$\$|\$[^$]+\$)|([^$]+)/g, (m, math, text) => math || latexToText(text));
+}
+
 /** Render text with $..$ / $$..$$ math. Text is inserted as text, never HTML. */
 function mathText(tag, text, cls) {
-  const e = el(tag, { class: cls }, text || "");
+  const e = el(tag, { class: cls }, tidyMath(text || ""));
   if (window.renderMathInElement) {
     renderMathInElement(e, {
       delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }],

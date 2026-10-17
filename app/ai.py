@@ -47,7 +47,8 @@ SYSTEM_PROMPT = """You are an expert {subject} teacher writing worksheet problem
 Return ONLY JSON matching: {{"problems": [{{"question", "answer", "solution", "given", "answer_formula", "answer_value"}}]}}.
 
 Rules:
-- Write math in LaTeX inside $...$ (inline) or $$...$$ (display). Never use a bare $ for money; write "dollars".
+- Write math in LaTeX inside $...$ (inline) or $$...$$ (display) in EVERY field, including "answer" and
+  "solution" (e.g. "$a = 7.1\\,\\mathrm{m/s^2}$"). Never use a bare $ for money; write "dollars".
 - In JSON strings, backslashes must be escaped (write \\\\frac, \\\\times).
 - "answer": the final answer with units, concise.
 - "solution": 1-3 short worked steps.
@@ -122,7 +123,67 @@ def _fix_latex(s: str) -> str:
     if len(singles) % 2:
         i = singles[-1]
         s = (s[:i] + s[i + 1:]).strip()
-    return s
+    return _tidy_math(s)
+
+
+# What follows the "n" in LaTeX commands like \\nu or \\neq — anything else after a literal
+# backslash-n is a line break the model double-escaped ("15 N\\n2) Apply ...").
+_N_COMMAND_REST = r"(?:u|eq|e|ot|abla|eg|i|leq|geq|mid|parallel|ewline|oindent)\b"
+
+# Readable stand-ins for LaTeX that a model left outside $...$ in prose.
+_UNICODE = {
+    "times": "×", "cdot": "·", "pm": "±", "mp": "∓", "approx": "≈", "leq": "≤", "le": "≤", "geq": "≥", "ge": "≥",
+    "neq": "≠", "ne": "≠", "circ": "°", "degree": "°", "infty": "∞", "to": "→", "rightarrow": "→",
+    "Rightarrow": "⇒", "implies": "⇒", "pi": "π", "theta": "θ", "mu": "μ", "Delta": "Δ", "delta": "δ",
+    "alpha": "α", "beta": "β", "gamma": "γ", "omega": "ω", "Omega": "Ω", "lambda": "λ", "rho": "ρ",
+    "sigma": "σ", "tau": "τ", "phi": "φ", "epsilon": "ε", "sin": "sin", "cos": "cos", "tan": "tan",
+    "ln": "ln", "log": "log", "left": "", "right": "", "quad": " ", "qquad": " ", "displaystyle": "",
+}
+_SUPERSCRIPT = str.maketrans("0123456789-+", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺")
+_MATH_SPAN = re.compile(r"\$\$.+?\$\$|\$[^$]+\$", re.S)
+
+
+def _latex_to_text(t: str) -> str:
+    """Turn stray LaTeX in prose into readable plain text: \frac{a}{b} -> a/b, x^{2} -> x², \times -> ×."""
+    def fraction(m: re.Match) -> str:
+        simple = re.fullmatch(r"[\w.]+", m[1]) and re.fullmatch(r"[\w.]+", m[2])
+        f = f"{m[1]}/{m[2]}" if simple else f"({m[1]})/({m[2]})"
+        followed = m.end() < len(t) and (t[m.end()].isalnum() or t[m.end()] == "(")
+        return f"({f})" if simple and followed else f  # "(1/2)mv²", not "1/2mv²"
+
+    for _ in range(3):  # unwrap nested \frac / \sqrt / \text
+        t = re.sub(r"\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}", fraction, t)
+        t = re.sub(r"\\sqrt\{([^{}]*)\}", lambda m: f"√{m[1]}" if re.fullmatch(r"[\w.]+", m[1]) else f"√({m[1]})", t)
+        t = re.sub(r"\\(?:text|mathrm|mathbf|textbf|operatorname)\{([^{}]*)\}", r"\1", t)
+    t = re.sub(r"\^\{?([-+]?\d+)\}?", lambda m: m[1].translate(_SUPERSCRIPT), t)
+    t = re.sub(r"\^\{([^{}]*)\}", r"^(\1)", t)
+    t = re.sub(r"_\{([^{}]*)\}", r"_\1", t)
+    t = re.sub(r"\\[,;:! ]", " ", t)
+
+    def command(m: re.Match) -> str:
+        name = m[1]
+        out = _UNICODE.get(name, name)
+        if name in ("sin", "cos", "tan", "ln", "log") and m.start() and t[m.start() - 1].isalnum():
+            out = " " + out  # "mg\sin" -> "mg sin"
+        return out
+    t = re.sub(r"\\([A-Za-z]+)", command, t)
+    return re.sub(r"\\(?!\$)", "", t)  # keep escaped dollars (\$5)
+
+
+def _tidy_math(s: str) -> str:
+    """Make AI text render: real line breaks, formula-only answers in $...$, and no raw LaTeX in prose."""
+    s = re.sub(r"\\n(?!" + _N_COMMAND_REST + ")", "\n", s)
+    if "$" not in s and re.search(r"\\[A-Za-z]+|\^|_\{", s):
+        words = re.findall(r"(?<!\\)\b[A-Za-z]{4,}\b", re.sub(r"\\[A-Za-z]+(\{[^{}]*\})?", " ", s))
+        if len(words) <= 2 and "\n" not in s and len(s) <= 80:
+            return "$" + s.strip().replace("°", "^\\circ") + "$"  # a bare formula: "a = g\sin(45°) = 7.1"
+    # Convert LaTeX that sits outside math spans.
+    out, last = [], 0
+    for m in _MATH_SPAN.finditer(s):
+        out += [_latex_to_text(s[last:m.start()]), m[0]]
+        last = m.end()
+    out.append(_latex_to_text(s[last:]))
+    return "".join(out)
 
 
 _NUM = r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"
@@ -146,7 +207,7 @@ def _text_matches(text: str, value: float) -> bool:
     return False
 
 
-def _verify(item: dict) -> tuple[str, str]:
+def _verify(item: dict, constants: dict[str, float] | None = None) -> tuple[str, str]:
     """Return (status, note); status is pass | fail | error | nonnumeric.
 
     Passing needs three things to agree: the model's formula evaluated by us, the model's
@@ -157,7 +218,8 @@ def _verify(item: dict) -> tuple[str, str]:
         return "nonnumeric", "Non-numeric answer — not auto-checked."
     formula = re.sub(r"""given(?:\.(\w+)|\[['"](\w+)['"]\])""", lambda m: m[1] or m[2], formula)
     try:
-        computed = safe_eval(formula, item.get("given") or {})
+        # Standard constants (e.g. the section's g) fill in names the model used but didn't list.
+        computed = safe_eval(formula, {**(constants or {}), **(item.get("given") or {})})
         stated = float(stated)
     except Exception as e:  # noqa: BLE001
         return "error", f"Could not evaluate check formula ({e}); the problem may be missing a given value."
@@ -195,7 +257,7 @@ async def _request(settings: dict, *, subject: str, topic: str, difficulty: int,
 
 
 async def generate_ai(settings: dict, *, subject: str, topic: str, difficulty: int, count: int,
-                      extra: str = "") -> list[Problem]:
+                      extra: str = "", constants: dict[str, float] | None = None) -> list[Problem]:
     """Ask the model for problems. In strict mode, problems whose answers fail (or can't run)
     the formula check are discarded and re-requested, up to two extra rounds; if the model
     still comes up short, the best flagged problems fill the gap so the user can review them."""
@@ -214,7 +276,7 @@ async def generate_ai(settings: dict, *, subject: str, topic: str, difficulty: i
         items = await _request(settings, subject=subject, topic=topic, difficulty=difficulty, count=need,
                                extra=extra + avoid)
         for item in items[:need]:
-            status, note = _verify(item)
+            status, note = _verify(item, constants)
             p = Problem(question=_fix_latex(str(item["question"])),
                         answer=_fix_latex(str(item.get("answer", ""))),
                         solution=_fix_latex(str(item.get("solution", ""))),

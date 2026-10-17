@@ -198,7 +198,7 @@ async def _make(sec: Section, rng: random.Random, settings: dict, count: int, se
         raise HTTPException(400, f"Unknown topic {sec.topic!r}")
     extra = _ai_instructions(sec, opts)
     probs = await generate_ai(settings, subject=sec.subject, topic=topic_text, difficulty=sec.difficulty,
-                              count=count, extra=extra)
+                              count=count, extra=extra, constants={"g": opts["g"]})
     for p in probs:
         p.topic = sec.topic
         seen.add(norm_question(p.question))
