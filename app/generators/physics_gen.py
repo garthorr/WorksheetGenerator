@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import math
 
+from . import drawings as draw
 from .core import Ctx, Problem, U, num, sig, step, topic, variant
 
 G_UNIV = 6.674e-11
 K_E = 8.99e9
 
 
-def P(question: str, answer: str, solution: str, given: dict, ans: dict, what: str = "") -> Problem:
-    """``what`` names the moving object, so tests can check its speed is realistic."""
-    return Problem(question, answer, solution, facts={"given": given, "ans": ans, "what": what})
+def P(question: str, answer: str, solution: str, given: dict, ans: dict, what: str = "", figure: str = "",
+      **facts) -> Problem:
+    """``what`` names the moving object, so tests can check its speed is realistic. Extra ``facts``
+    (e.g. a graph's points) are kept for the tests."""
+    return Problem(question, answer, solution, figure=figure, facts={"given": given, "ans": ans, "what": what, **facts})
 
 
 def pick(ctx: Ctx, table):
@@ -75,7 +78,7 @@ def _object(ctx: Ctx):
 # ======================================================== Kinematics
 
 topic("kinematics", "physics", "Kinematics", "1D kinematics",
-      "Constant-acceleration motion, free fall and braking distances.", courses=['conceptual', 'ap1'])
+      "Constant-acceleration motion, free fall and braking distances.", courses=['conceptual', 'ap1'], figures=True)
 
 # name, v0 max, accel range (lo, hi, step), top speed
 VEHICLES = [("car", 20, (1, 4, 0.5), 40), ("motorcycle", 20, (2, 6, 0.5), 50),
@@ -95,6 +98,91 @@ def _kin_final_v(ctx: Ctx) -> Problem:
              "What is its final speed?",
              f"$v = {ctx.fmt(v)}{U('m/s')}$", rf"$v = v_0 + at = {num(v0)} + ({num(a)})({num(t)})$",
              {"v0": v0, "a": a, "t": t}, {"v": v}, what=name)
+
+
+def _segments(ctx: Ctx, n: int, lo: int, hi: int) -> list[int]:
+    """Segment end times: n segments of 2-5 s each."""
+    t, out = 0, [0]
+    for _ in range(n):
+        t += ctx.rng.randint(2, 5)
+        out.append(t)
+    return out
+
+
+@variant("kinematics", 1, "Position-time graphs")
+def _kin_xt_graph(ctx: Ctx) -> Problem:
+    while True:
+        ts = _segments(ctx, 3, 2, 5)
+        vs = [ctx.rng.randint(-4, 4) for _ in range(3)]
+        xs = [ctx.rng.randint(-2, 6)]
+        for i, v in enumerate(vs):
+            xs.append(xs[-1] + v * (ts[i + 1] - ts[i]))
+        if vs[0] and vs[2] and len(set(vs)) == 3 and max(map(abs, xs)) <= 24:
+            break
+    pts = list(zip(ts, xs))
+    step_y = 2 if max(map(abs, xs)) <= 12 else 4
+    return P(f"The graph shows the position of a cart. Find its velocity (a) from $t = 0$ to $t = {ts[1]}{U('s')}$ "
+             f"and (b) from $t = {ts[2]}$ to $t = {ts[3]}{U('s')}$.",
+             f"(a) ${vs[0]}{U('m/s')}$ (b) ${vs[2]}{U('m/s')}$", "Velocity is the slope of a position-time graph.",
+             {}, {"vA": vs[0], "vB": vs[2]}, figure=draw.motion_graph(pts, "x (m)", ystep=step_y),
+             graph=pts, figure_required=True)
+
+
+def _vt_points(ctx: Ctx, allow_negative: bool) -> list[tuple[int, int]]:
+    while True:
+        ts = _segments(ctx, 3, 2, 5)
+        vs = [0 if not allow_negative else ctx.rng.choice([0, 2, 4])]
+        for _ in range(3):
+            vs.append(ctx.rng.randrange(-10 if allow_negative else 0, 21, 2))
+        accels = [(vs[i + 1] - vs[i]) / (ts[i + 1] - ts[i]) for i in range(3)]
+        reverses = min(vs) < 0 < max(vs)  # moves forward and backward, so distance ≠ |displacement|
+        if accels[0] and float(accels[0]).is_integer() and (reverses if allow_negative else True) \
+                and max(map(abs, vs)) > 0:
+            return list(zip(ts, vs))
+
+
+def _areas(pts):
+    """Signed area (displacement) and total area (distance) under a piecewise-linear v-t graph."""
+    disp = dist = 0.0
+    for (t0, v0), (t1, v1) in zip(pts, pts[1:]):
+        if v0 * v1 < 0:  # crosses zero inside the segment: split it
+            tc = t0 + (t1 - t0) * v0 / (v0 - v1)
+            parts = [(t0, v0, tc, 0), (tc, 0, t1, v1)]
+        else:
+            parts = [(t0, v0, t1, v1)]
+        for a, va, b, vb in parts:
+            area = (va + vb) / 2 * (b - a)
+            disp += area
+            dist += abs(area)
+    return disp, dist
+
+
+@variant("kinematics", 2, "Velocity-time graphs")
+def _kin_vt_graph(ctx: Ctx) -> Problem:
+    pts = _vt_points(ctx, allow_negative=False)
+    (t0, v0), (t1, v1) = pts[0], pts[1]
+    a = (v1 - v0) / (t1 - t0)
+    disp, _ = _areas(pts)
+    return P(f"The graph shows the velocity of a cart. Find (a) its acceleration from $t = 0$ to "
+             f"$t = {t1}{U('s')}$ and (b) its displacement from $t = 0$ to $t = {pts[-1][0]}{U('s')}$.",
+             f"(a) ${ctx.fmt(a)}{U('m/s^2')}$ (b) ${ctx.fmt(disp)}{U('m')}$",
+             "Acceleration is the slope; displacement is the area under the velocity-time graph.",
+             {}, {"a": a, "d": disp}, figure=draw.motion_graph(pts, "v (m/s)", ystep=2),
+             graph=pts, figure_required=True)
+
+
+@variant("kinematics", 3, "Velocity-time graphs")
+def _kin_vt_graph_signed(ctx: Ctx) -> Problem:
+    pts = _vt_points(ctx, allow_negative=True)
+    disp, dist = _areas(pts)
+    end = pts[-1][0]
+    return P(f"The graph shows the velocity of a cart moving along a straight track. From $t = 0$ to "
+             f"$t = {end}{U('s')}$, find (a) its displacement and (b) the total distance it travels.",
+             f"(a) ${ctx.fmt(disp)}{U('m')}$ (b) ${ctx.fmt(dist)}{U('m')}$",
+             "Area above the axis counts as positive displacement and area below as negative; "
+             "distance adds the sizes of all areas.",
+             {}, {"d": disp, "dist": dist}, figure=draw.motion_graph(pts, "v (m/s)", ystep=2),
+             graph=pts, figure_required=True)
 
 
 DROPS = [("balcony", 4, 20), ("rooftop", 10, 60), ("bridge", 10, 80), ("cliff", 20, 120)]
@@ -156,7 +244,7 @@ def _kin_throw_up(ctx: Ctx) -> Problem:
 # ======================================================== Projectiles
 
 topic("projectile", "physics", "Kinematics", "Projectile motion",
-      "Horizontal launches and angled launches over level ground.", courses=['conceptual', 'ap1'])
+      "Horizontal launches and angled launches over level ground.", courses=['conceptual', 'ap1'], figures=True)
 
 # description, height range (lo, hi, step), speed range (lo, hi, step)
 LAUNCHES = [
@@ -174,12 +262,16 @@ def _horizontal(ctx: Ctx):
     return lead, who, where, h, v, t
 
 
+def _launch_figure(h, v, where) -> str:
+    return draw.horizontal_launch(h, where, f"{num(h)} m", f"{num(v)} m/s")
+
+
 @variant("projectile", 1, "Horizontal launch: range")
 def _proj_horiz_range(ctx: Ctx) -> Problem:
     lead, who, where, h, v, t = _horizontal(ctx)
     return P(f"{lead}. How far from the base of the {where} does {who} land?" + ctx.g_note(),
              f"$x = {ctx.fmt(v * t)}{U('m')}$", rf"$t = \sqrt{{2h/g}} = {ctx.fmt(t)}\,\mathrm{{s}}$, $x = v t$",
-             {"h": h, "v": v}, {"x": v * t})
+             {"h": h, "v": v}, {"x": v * t}, figure=_launch_figure(h, v, where))
 
 
 @variant("projectile", 2, "Horizontal launch: time, range & speed")
@@ -190,7 +282,7 @@ def _proj_horiz_full(ctx: Ctx) -> Problem:
              "just before it lands." + ctx.g_note(),
              f"(a) ${ctx.fmt(t)}{U('s')}$ (b) ${ctx.fmt(v * t)}{U('m')}$ (c) ${ctx.fmt(math.hypot(v, vy))}{U('m/s')}$",
              r"$t = \sqrt{2h/g}$, $x = vt$, $v_y = gt$, speed $= \sqrt{v^2 + v_y^2}$",
-             {"h": h, "v": v}, {"t": t, "x": v * t, "speed": math.hypot(v, vy)})
+             {"h": h, "v": v}, {"t": t, "x": v * t, "speed": math.hypot(v, vy)}, figure=_launch_figure(h, v, where))
 
 
 @variant("projectile", 3, "Angled launch")
@@ -206,13 +298,14 @@ def _proj_angle(ctx: Ctx) -> Problem:
              f"(c) ${ctx.fmt(vx * T)}{U('m')}$",
              rf"$v_x = {ctx.fmt(vx)}$, $v_y = {ctx.fmt(vy)}$; $T = 2v_y/g$, $H = v_y^2/2g$, $R = v_x T$",
              {"v": v, "theta": th, **({"sin": sin_, "cos": cos_} if trig_note else {})},
-             {"T": T, "H": vy * vy / (2 * ctx.g), "R": vx * T})
+             {"T": T, "H": vy * vy / (2 * ctx.g), "R": vx * T},
+             figure=draw.angled_launch(th, f"{num(v)} m/s", f"{th}°"))
 
 
 # ======================================================== Forces
 
 topic("newton", "physics", "Forces & dynamics", "Newton's laws & forces",
-      "F = ma, friction, inclined planes and Atwood machines.", courses=['conceptual', 'ap1'])
+      "F = ma, friction, inclined planes and Atwood machines.", courses=['conceptual', 'ap1'], figures=True)
 
 # noun, mass range (lo, hi, step), acceleration range (lo, hi, step)
 PUSHED = [("cart", (2, 40, 1), (0.5, 5, 0.5)), ("car", (900, 2000, 50), (1, 4, 0.5)),
@@ -237,6 +330,65 @@ def _newton_accel(ctx: Ctx) -> Problem:
              f"$a = {ctx.fmt(F / m)}{U('m/s^2')}$", "$a = F/m$", {"F": F, "m": m}, {"a": F / m}, what=name)
 
 
+def _fbd_forces(ctx: Ctx, two_d: bool):
+    """Forces whose net can't be misread off the diagram (the net never equals a drawn force)."""
+    while True:
+        forces = _fbd_draw(ctx, two_d)
+        net = math.hypot(forces["right"] - forces["left"], forces["up"] - forces["down"])
+        if all(abs(net - F) > 1e-9 for F in forces.values()):
+            return forces
+
+
+def _fbd_draw(ctx: Ctx, two_d: bool):
+    """Forces (N) on a box: right/left always differ; up/down differ only for a 2-D problem.
+    In whole-number mode a 2-D net force comes from a 3-4-5-style triple, so its size is whole."""
+    if two_d and ctx.nice:
+        a, b, _ = ctx.rng.choice([(3, 4, 5), (5, 12, 13), (8, 15, 17)])
+        k = ctx.rng.choice([1, 2, 5]) if a > 3 else ctx.rng.choice([5, 10, 15, 20])
+        fx, fy = (a * k, b * k) if ctx.rng.random() < 0.5 else (b * k, a * k)
+        left, down = ctx.rng.randrange(0, 60, 5), ctx.rng.randrange(20, 80, 5)
+        return {"right": left + fx, "left": left, "up": down + fy, "down": down}
+    while True:
+        r, l_ = ctx.rng.randrange(10, 125, 5), ctx.rng.randrange(0, 85, 5)
+        up = ctx.rng.randrange(20, 125, 5)
+        down = ctx.rng.randrange(20, 125, 5) if two_d else up
+        if r != l_ and (not two_d or up != down):
+            return {"right": r, "left": l_, "up": up, "down": down}
+
+
+def _fbd_figure(forces: dict) -> str:
+    biggest = max(forces.values())
+    return draw.free_body([(d, 1.2 * F / biggest, f"{F} N") for d, F in forces.items() if F])
+
+
+@variant("newton", 1, "Free-body diagrams")
+def _newton_fbd(ctx: Ctx) -> Problem:
+    forces = _fbd_forces(ctx, two_d=False)
+    m = ctx.rng.choice([2, 4, 5, 8, 10, 12, 15, 20, 25])
+    net = forces["right"] - forces["left"]
+    side = "to the right" if net > 0 else "to the left"
+    return P(f"The free-body diagram shows every force acting on a ${m}{U('kg')}$ box. Find (a) the net force "
+             "and (b) the box's acceleration.",
+             f"(a) ${abs(net)}{U('N')}$ {side} (b) ${ctx.fmt(abs(net) / m)}{U('m/s^2')}$ {side}",
+             "The vertical forces balance; the net force is the difference of the horizontal forces, and $a = F/m$.",
+             {"m": m}, {"F": abs(net), "a": abs(net) / m}, figure=_fbd_figure(forces), forces=forces,
+             figure_required=True)
+
+
+@variant("newton", 2, "Free-body diagrams")
+def _newton_fbd_2d(ctx: Ctx) -> Problem:
+    forces = _fbd_forces(ctx, two_d=True)
+    fx, fy = forces["right"] - forces["left"], forces["up"] - forces["down"]
+    net = math.hypot(fx, fy)
+    angle = math.degrees(math.atan2(abs(fy), abs(fx)))
+    where = f"{'above' if fy > 0 else 'below'} the {'+' if fx > 0 else '−'}x direction" if fx else ""
+    return P("The free-body diagram shows every force acting on a box. Find the magnitude of the net force "
+             "and the angle it makes with the horizontal.",
+             f"$F_{{net}} = {ctx.fmt(net)}{U('N')}$ at ${ctx.fmt(angle)}^\\circ$ {where}".rstrip(),
+             f"$F_x = {fx}\\,\\mathrm{{N}}$, $F_y = {fy}\\,\\mathrm{{N}}$, $F = \\sqrt{{F_x^2 + F_y^2}}$",
+             {}, {"F": net, "angle": angle}, figure=_fbd_figure(forces), forces=forces, figure_required=True)
+
+
 @variant("newton", 2, "Friction")
 def _newton_friction(ctx: Ctx) -> Problem:
     m, mu = step(ctx.rng, 10, 60, 1), step(ctx.rng, 0.1, 0.5, 0.05)
@@ -247,7 +399,8 @@ def _newton_friction(ctx: Ctx) -> Problem:
              f"The coefficient of kinetic friction is ${num(mu)}$. Find the crate's acceleration." + ctx.g_note(),
              f"$a = {ctx.fmt(a)}{U('m/s^2')}$",
              rf"$f_k = \mu m g = {ctx.fmt(fr)}\,\mathrm{{N}}$; $a = (F - f_k)/m$",
-             {"m": m, "F": F, "mu": mu}, {"a": a})
+             {"m": m, "F": F, "mu": mu}, {"a": a},
+             figure=draw.pushed_crate(f"{num(F)} N", f"μₖ = {num(mu)}", f"{num(m)} kg"))
 
 
 @variant("newton", 3, "Inclines")
@@ -258,7 +411,8 @@ def _newton_incline(ctx: Ctx) -> Problem:
     return P(f"A block slides down a ${th}^\\circ$ incline. The coefficient of kinetic friction is ${num(mu)}$. "
              "Find its acceleration." + ctx.g_note() + trig_note,
              f"$a = {ctx.fmt(a)}{U('m/s^2')}$", r"$a = g(\sin\theta - \mu_k \cos\theta)$",
-             {"theta": th, "mu": mu, **({"sin": sin_, "cos": cos_} if trig_note else {})}, {"a": a})
+             {"theta": th, "mu": mu, **({"sin": sin_, "cos": cos_} if trig_note else {})}, {"a": a},
+             figure=draw.incline(th, f"{th}°", f"μₖ = {num(mu)}"))
 
 
 @variant("newton", 3, "Atwood machine")
@@ -272,13 +426,14 @@ def _newton_atwood(ctx: Ctx) -> Problem:
              "frictionless pulley (Atwood machine). Find (a) the acceleration and (b) the string tension." + ctx.g_note(),
              f"(a) ${ctx.fmt(a)}{U('m/s^2')}$ (b) ${ctx.fmt(T)}{U('N')}$",
              r"$a = \frac{|m_1 - m_2|g}{m_1 + m_2}$, $T = \frac{2m_1 m_2 g}{m_1 + m_2}$",
-             {"m1": m1, "m2": m2}, {"a": a, "T": T})
+             {"m1": m1, "m2": m2}, {"a": a, "T": T},
+             figure=draw.atwood(f"{num(m1)} kg", f"{num(m2)} kg", m1, m2))
 
 
 # ======================================================== Energy
 
 topic("energy", "physics", "Work, energy & power", "Work, energy & power",
-      "Kinetic/potential energy, work done by forces, energy conservation, power.", courses=['conceptual', 'ap1'])
+      "Kinetic/potential energy, work done by forces, energy conservation, power.", courses=['conceptual', 'ap1'], figures=True)
 
 
 @variant("energy", 1, "Kinetic energy")
@@ -314,7 +469,8 @@ def _energy_work_angle(ctx: Ctx) -> Problem:
     what = pick(ctx, ["a sled", "a wagon", "a suitcase", "a crate"])
     return P(f"A rope pulls {what} ${num(d)}{U('m')}$ across level ground with a force of ${num(F)}{U('N')}$ "
              f"at ${th}^\\circ$ above the horizontal. How much work does the rope do?",
-             f"$W = {ctx.fmt(W)}{U('J')}$", r"$W = Fd\cos\theta$", {"F": F, "d": d, "theta": th}, {"W": W})
+             f"$W = {ctx.fmt(W)}{U('J')}$", r"$W = Fd\cos\theta$", {"F": F, "d": d, "theta": th}, {"W": W},
+             figure=draw.rope_pull(th, f"{num(F)} N", f"{th}°"))
 
 
 @variant("energy", 2, "Energy conservation")
@@ -329,7 +485,8 @@ def _energy_coaster(ctx: Ctx) -> Problem:
                       "A sled starts from rest"])
     return P(f"{what} at the top of a ${num(h)}{U('m')}$ high slope. Ignoring friction, how fast is it moving "
              "at the bottom?" + ctx.g_note(),
-             f"$v = {ctx.fmt(v)}{U('m/s')}$", r"$mgh = \tfrac{1}{2}mv^2 \Rightarrow v = \sqrt{2gh}$", {"h": h}, {"v": v})
+             f"$v = {ctx.fmt(v)}{U('m/s')}$", r"$mgh = \tfrac{1}{2}mv^2 \Rightarrow v = \sqrt{2gh}$", {"h": h}, {"v": v},
+             figure=draw.coaster(f"{num(h)} m"))
 
 
 @variant("energy", 3, "Power")
@@ -355,7 +512,7 @@ def _energy_friction_loss(ctx: Ctx) -> Problem:
 # ======================================================== Momentum
 
 topic("momentum", "physics", "Momentum", "Momentum & collisions",
-      "Momentum, impulse, inelastic and elastic 1D collisions.", courses=['conceptual', 'ap1'])
+      "Momentum, impulse, inelastic and elastic 1D collisions.", courses=['conceptual', 'ap1'], figures=True)
 
 
 @variant("momentum", 1, "Momentum")
@@ -391,7 +548,9 @@ def _mom_inelastic(ctx: Ctx) -> Problem:
              f"${num(m2)}{U('kg')}$ car {other}. Find their common velocity just after the collision "
              "(positive = the first car's original direction).",
              f"$v_f = {ctx.fmt(vf)}{U('m/s')}$", r"$v_f = \frac{m_1 v_1 + m_2 v_2}{m_1 + m_2}$",
-             {"m1": m1, "m2": m2, "v1": v1, "v2": v2}, {"vf": vf})
+             {"m1": m1, "m2": m2, "v1": v1, "v2": v2}, {"vf": vf},
+             figure=draw.collision(f"{num(m1)} kg", f"{num(v1)} m/s", f"{num(m2)} kg",
+                                   f"{num(abs(v2))} m/s" if v2 else "at rest", (v2 > 0) - (v2 < 0)))
 
 
 @variant("momentum", 3, "Elastic collisions")
@@ -406,7 +565,8 @@ def _mom_elastic(ctx: Ctx) -> Problem:
              "cart in a perfectly elastic head-on collision on a frictionless track. Find both final velocities.",
              f"$v_1' = {ctx.fmt(v1f)}{U('m/s')}$, $v_2' = {ctx.fmt(v2f)}{U('m/s')}$",
              r"$v_1' = \frac{m_1 - m_2}{m_1 + m_2}v_1$, $v_2' = \frac{2m_1}{m_1 + m_2}v_1$",
-             {"m1": m1, "m2": m2, "v1": v1}, {"v1f": v1f, "v2f": v2f})
+             {"m1": m1, "m2": m2, "v1": v1}, {"v1f": v1f, "v2f": v2f},
+             figure=draw.collision(f"{num(m1)} kg", f"{num(v1)} m/s", f"{num(m2)} kg", "at rest", 0))
 
 
 # ======================================================== Circular motion & gravitation
@@ -464,7 +624,7 @@ def _circ_orbit(ctx: Ctx) -> Problem:
 # ======================================================== Circuits
 
 topic("circuits", "physics", "Electricity", "DC circuits",
-      "Ohm's law, power, and series/parallel resistor networks.", courses=['conceptual'])
+      "Ohm's law, power, and series/parallel resistor networks.", courses=['conceptual'], figures=True)
 
 E12 = [10, 12, 15, 18, 22, 27, 33, 39, 47, 56, 68, 82]
 RESISTORS = [r * k for k in (1, 10, 100) for r in E12]  # standard values, 10 Ω – 8.2 kΩ
@@ -517,7 +677,8 @@ def _circ_series(ctx: Ctx) -> Problem:
              f"(a) ${ctx.fmt(Req)}{OHM}$ (b) ${ctx.fmt(V / Req)}{U('A')}$ (c) ${ctx.fmt(V / Req * Rs[0])}{U('V')}$",
              r"Series: $R_{eq} = \sum R_i$; $I = V/R_{eq}$; $V_1 = IR_1$",
              {"V": V, **{f"R{i + 1}": r for i, r in enumerate(Rs)}},
-             {"Req": Req, "I": V / Req, "V1": V / Req * Rs[0]})
+             {"Req": Req, "I": V / Req, "V1": V / Req * Rs[0]},
+             figure=draw.series_circuit([f"{r} Ω" for r in Rs], f"{num(V)} V"))
 
 
 @variant("circuits", 2, "Parallel circuits")
@@ -530,7 +691,8 @@ def _circ_parallel(ctx: Ctx) -> Problem:
              f"(a) ${ctx.fmt(Req)}{OHM}$ (b) ${ctx.fmt(V / Req)}{U('A')}$ (c) ${ctx.fmt(V * V / Req)}{U('W')}$",
              r"Parallel: $1/R_{eq} = \sum 1/R_i$; $I = V/R_{eq}$; $P = V^2/R_{eq}$",
              {"V": V, **{f"R{i + 1}": r for i, r in enumerate(Rs)}},
-             {"Req": Req, "I": V / Req, "P": V * V / Req})
+             {"Req": Req, "I": V / Req, "P": V * V / Req},
+             figure=draw.parallel_circuit([f"{r} Ω" for r in Rs], f"{num(V)} V"))
 
 
 @variant("circuits", 3, "Combination circuits")
@@ -545,7 +707,8 @@ def _circ_combo(ctx: Ctx) -> Problem:
              "(b) the current through $R_1$, (c) the current through $R_2$.",
              f"(a) ${ctx.fmt(Req)}{OHM}$ (b) ${ctx.fmt(I)}{U('A')}$ (c) ${ctx.fmt(I * Rp / R2)}{U('A')}$",
              rf"$R_{{23}} = {ctx.fmt(Rp)}\,\Omega$; $V_{{23}} = I R_{{23}}$; $I_2 = V_{{23}}/R_2$",
-             {"V": V, "R1": R1, "R2": R2, "R3": R3}, {"Req": Req, "I": I, "I2": I * Rp / R2})
+             {"V": V, "R1": R1, "R2": R2, "R3": R3}, {"Req": Req, "I": I, "I2": I * Rp / R2},
+             figure=draw.combo_circuit(f"R₁ = {R1} Ω", f"R₂ = {R2} Ω", f"R₃ = {R3} Ω", f"{num(V)} V"))
 
 
 # ======================================================== Electrostatics
@@ -639,7 +802,7 @@ def _string_harmonic(ctx: Ctx) -> Problem:
 # ======================================================== Optics
 
 topic("optics", "physics", "Light & optics", "Optics",
-      "Snell's law, thin lenses and magnification.", courses=['conceptual'])
+      "Snell's law, thin lenses and magnification.", courses=['conceptual'], figures=True)
 
 MEDIA = [("air", 1.00), ("water", 1.33), ("ice", 1.31), ("ethanol", 1.36), ("glycerin", 1.47),
          ("acrylic", 1.49), ("crown glass", 1.52), ("flint glass", 1.66), ("cubic zirconia", 2.15),
@@ -655,7 +818,8 @@ def _snell(ctx: Ctx) -> Problem:
     return P(f"Light passes from {m1} ($n = {n1:.2f}$) into {m2} ($n = {n2:.2f}$) at an angle of incidence "
              f"of ${num(th1)}^\\circ$. Find the angle of refraction.",
              f"$\\theta_2 = {ctx.fmt(th2)}^\\circ$", r"$n_1 \sin\theta_1 = n_2 \sin\theta_2$",
-             {"n1": n1, "n2": n2, "theta1": th1}, {"theta2": th2})
+             {"n1": n1, "n2": n2, "theta1": th1}, {"theta2": th2},
+             figure=draw.refraction(th1, f"{num(th1)}°", m1, m2))
 
 
 @variant("optics", 3, "Thin lenses")
@@ -668,7 +832,8 @@ def _lens(ctx: Ctx) -> Problem:
              "Find the image distance, the magnification, and describe the image.",
              f"$d_i = {ctx.fmt(di)}{U('cm')}$, $m = {ctx.fmt(m)}$; real, inverted",
              r"$\frac{1}{f} = \frac{1}{d_o} + \frac{1}{d_i}$, $m = -d_i/d_o$",
-             {"f": f, "do": do}, {"di": di, "m": m})
+             {"f": f, "do": do}, {"di": di, "m": m},
+             figure=draw.lens_diagram(f, do, f"f = {num(f)} cm", f"{num(do)} cm"))
 
 
 # ======================================================== Thermal
@@ -713,7 +878,7 @@ def _gas(ctx: Ctx) -> Problem:
 # ======================================================== Fluids
 
 topic("fluids", "physics", "Fluids", "Fluids & pressure",
-      "Density, hydrostatic pressure and buoyancy.", courses=['conceptual', 'ap1'])
+      "Density, hydrostatic pressure and buoyancy.", courses=['conceptual', 'ap1'], figures=True)
 
 # density in g/cm^3
 MATERIALS = [("aluminum", 2.70), ("iron", 7.87), ("copper", 8.96), ("lead", 11.3), ("gold", 19.3),
@@ -756,4 +921,4 @@ def _buoyancy(ctx: Ctx) -> Problem:
              "Find (a) the buoyant force and (b) its apparent weight." + ctx.g_note(),
              f"(a) ${ctx.fmt(Fb)}{U('N')}$ (b) ${ctx.fmt(W - Fb)}{U('N')}$",
              r"$F_b = \rho_{water} V g$; apparent weight $= mg - F_b$", {"V": V, "rho": rho},
-             {"Fb": Fb, "Wapp": W - Fb})
+             {"Fb": Fb, "Wapp": W - Fb}, figure=draw.submerged_block(f"ρ = {num(rho)} kg/m³"))

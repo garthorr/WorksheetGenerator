@@ -86,6 +86,11 @@ function tidyMath(s) {
   return s.replace(/(\$\$[\s\S]+?\$\$|\$[^$]+\$)|([^$]+)/g, (m, math, text) => math || latexToText(text));
 }
 
+/** A problem's figure. As an <img>, the SVG can't run script even if a saved worksheet was altered. */
+function figureImg(svg) {
+  return el("img", { class: "figure", alt: "Figure for this problem", src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` });
+}
+
 /** Render text with $..$ / $$..$$ math. Text is inserted as text, never HTML. */
 function mathText(tag, text, cls) {
   const e = el(tag, { class: cls }, tidyMath(text || ""));
@@ -189,7 +194,8 @@ function renderCatalog() {
 function addSection(partial) {
   const cfg = {
     title: "", subject: "math", topic: "", custom_topic: "", count: 5, difficulty: 2,
-    source: "builtin", ai_prompt: "", skills: null, g: null, nice: null, answer_form: null, places: null, ...partial,
+    source: "builtin", ai_prompt: "", skills: null, g: null, nice: null, answer_form: null, places: null,
+    figures: null, ...partial,
   };
   if (cfg.topic === "custom") cfg.source = "ai";
   state.sheet.sections.push({ config: cfg, problems: [], error: "" });
@@ -336,6 +342,11 @@ function renderSections() {
       const opts = answerOptions(cfg, cfg.source === "ai" ? null : topicMeta, update);
       if (opts) card.append(opts);
     }
+    if (topicMeta?.figures && cfg.source === "builtin") {
+      const on = cfg.figures ?? state.settings.figures;
+      card.append(el("label", { title: "Problems that are read off a graph or diagram always keep their figure" }, "Figures",
+        seg([[true, "Show"], [false, "Hide"]], on, (v) => update({ figures: v }))));
+    }
     if (cfg.subject === "physics") {
       // null = follow the Setup page default
       const g = cfg.g ?? state.settings.physics_g, nice = cfg.nice ?? state.settings.physics_nice;
@@ -382,7 +393,7 @@ async function generateSections(indices, seed = null) {
   try {
     // Questions in the other sections, so the new ones don't repeat them.
     const avoid = state.sheet.sections.filter((_, i) => !indices.includes(i))
-      .flatMap((s) => s.problems.map((p) => p.question));
+      .flatMap((s) => s.problems.map((p) => p.key || p.question));
     const res = await api("/api/generate", {
       method: "POST",
       body: { seed, avoid, sections: indices.map((i) => state.sheet.sections[i].config) },
@@ -415,7 +426,7 @@ async function regenerateProblem(si, pi) {
   const sec = state.sheet.sections[si];
   setStatus("Regenerating problem…", "", true);
   try {
-    const avoid = state.sheet.sections.flatMap((s) => s.problems.map((p) => p.question));
+    const avoid = state.sheet.sections.flatMap((s) => s.problems.map((p) => p.key || p.question));
     sec.problems[pi] = await api("/api/problem", { method: "POST", body: { ...sec.config, avoid } });
     setStatus("");
     saveDraft();
@@ -469,6 +480,7 @@ function renderPreview() {
     sec.problems.forEach((p, pi) => {
       n += 1;
       const q = mathText("div", p.question, "q");
+      if (p.figure) q.append(figureImg(p.figure));
       const b = badge(p);
       if (b) q.append(b);
       const tools = el("div", { class: "ptools" },
@@ -500,6 +512,8 @@ function editProblem(si, pi) {
   $("#edit-q").value = p.question;
   $("#edit-a").value = p.answer;
   $("#edit-s").value = p.solution || "";
+  $("#edit-figure-row").hidden = !p.figure;
+  $("#edit-keep-figure").checked = true;
   const preview = () => $("#edit-preview").replaceChildren(
     mathText("div", $("#edit-q").value), el("hr"), mathText("div", "Answer: " + $("#edit-a").value));
   preview();
@@ -507,6 +521,7 @@ function editProblem(si, pi) {
   dlg.onclose = () => {
     if (dlg.returnValue !== "save") return;
     Object.assign(p, { question: $("#edit-q").value, answer: $("#edit-a").value, solution: $("#edit-s").value });
+    if (p.figure && !$("#edit-keep-figure").checked) p.figure = "";
     if (p.source === "ai") { p.verified = null; p.check_note = "Edited by hand."; }
     saveDraft();
     renderPreview();

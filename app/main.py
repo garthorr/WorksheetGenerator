@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import storage
 from .ai import AIError, generate_ai, list_models
 from .generators import TOPICS, generate_set
-from .generators.core import COURSE_UNITS, COURSES, PLACE_NAMES, norm_question
+from .generators.core import COURSE_UNITS, COURSES, PLACE_NAMES, norm_question, problem_key
 
 log = logging.getLogger("worksheets")
 STATIC = Path(__file__).parent / "static"
@@ -138,12 +138,14 @@ class Section(BaseModel):
     nice: bool | None = None  # physics: whole-number values
     answer_form: Literal["both", "exact", "decimal"] | None = None  # math: exact (π, radicals) and/or decimal
     places: Literal[0, 1, 2, 3] | None = None  # math: decimal places to round to
+    figures: bool | None = None  # include figures (problems read off a figure always keep theirs)
 
 
 class GenerateRequest(BaseModel):
     sections: list[Section] = Field(..., min_length=1, max_length=20)
     seed: int | None = None
-    # Questions already on the worksheet outside these sections, so nothing is repeated.
+    # Problem keys (or questions, for older worksheets) already on the worksheet outside these
+    # sections, so nothing is repeated.
     avoid: list[str] = Field(default_factory=list, max_length=1000)
 
 
@@ -157,7 +159,7 @@ def _options(sec: Section, settings: dict) -> dict:
         return value if value is not None else settings[key]
     return {"sig": int(settings["sig_figs"]), "g": float(pick(sec.g, "physics_g")),
             "nice": bool(pick(sec.nice, "physics_nice")), "form": pick(sec.answer_form, "math_answer_form"),
-            "places": int(pick(sec.places, "math_places"))}
+            "places": int(pick(sec.places, "math_places")), "figures": bool(pick(sec.figures, "figures"))}
 
 
 def _ai_instructions(sec: Section, opts: dict) -> str:
@@ -201,7 +203,8 @@ async def _make(sec: Section, rng: random.Random, settings: dict, count: int, se
                               count=count, extra=extra, constants={"g": opts["g"]})
     for p in probs:
         p.topic = sec.topic
-        seen.add(norm_question(p.question))
+        p.key = problem_key(p.question)
+        seen.add(p.key)
     return [p.to_dict() for p in probs]
 
 
@@ -262,6 +265,7 @@ class SettingsIn(BaseModel):
     physics_nice: bool | None = None
     math_answer_form: Literal["both", "exact", "decimal"] | None = None
     math_places: Literal[0, 1, 2, 3] | None = None
+    figures: bool | None = None
 
     @field_validator("ollama_url")
     @classmethod

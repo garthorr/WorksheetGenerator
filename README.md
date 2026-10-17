@@ -24,6 +24,12 @@ Served at **https://worksheets.tastymath.com** through Traefik.
 - **Reproducible:** the same seed and the same built-in sections always give the same worksheet.
 - **No repeats:** a worksheet never contains the same problem twice, sections rotate
   through every problem type in their topic, and answers rarely repeat within a section.
+- **Figures:** problems come with diagrams drawn from their own numbers: right triangles,
+  shapes, 3-D boxes, coordinate graphs, launches, inclines, free-body diagrams, collisions,
+  circuits, lens and refraction diagrams, and motion graphs. Figures label the givens and
+  mark the unknown with x, θ or ?; they never show the answer. Some skills are read off a
+  figure (slope from a graph, velocity-time and position-time graphs, free-body diagrams), so
+  those keep their figure even when figures are turned off on the Setup page or for a section.
 - **Physics options:** g = 9.8 or 10 m/s² (stated in the problem when it's 10), and a
   **whole-number** mode for conceptual physics with simple givens and answers. Set the
   defaults on the Setup page; each physics section can override them. Sections added
@@ -109,7 +115,9 @@ The topic appears in the catalog automatically. A new unit (here "Oscillations")
 needs a place in `COURSE_UNITS` in `core.py`, which sets each course's teaching order;
 the tests remind you. Physics variants pass their givens and answers through `P(...)`
 so the tests can check them, and need a physics-law check in `LAWS` in
-`tests/test_quality.py`. Math answers with exact forms should use `ctx.form_note()`
+`tests/test_quality.py`. Figures come from `app/generators/drawings.py` (built on the small SVG kit in `figures.py`);
+pass `figure=` to `Problem`/`P`, and add `figure_required=True` to the facts when the problem
+can't be done without it. Math answers with exact forms should use `ctx.form_note()`
 and `ctx.exact_or_decimal()`, and plain decimals should use `ctx.round_note()` and
 `ctx.rnd()`.
 
@@ -133,6 +141,15 @@ and `ctx.exact_or_decimal()`, and plain decimals should use `ctx.round_note()` a
   every topic belongs to a course.
 - **Well-formed:** clean wording, g is stated exactly when it matters, whole-number mode
   delivers simple values, and every formula renders in KaTeX (`tests/test_katex.py`).
+
+`tests/test_figures.py` checks that every figure is valid SVG, only shows numbers that are in
+the question (or that the problem is read from), never shows the answer, and marks the unknown.
+
+To review every kind of figure at once, render the gallery and open it in a browser:
+
+```bash
+.venv/bin/python -m scripts.gallery gallery.html
+```
 
 To see the numbers behind this, run the audit (pool size, wording variety, repeats,
 whole-number rate per topic and level):

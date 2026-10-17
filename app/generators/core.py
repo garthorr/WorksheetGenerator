@@ -9,6 +9,7 @@ values and compute the answer themselves, so built-in answers are correct by con
 
 from __future__ import annotations
 
+import hashlib
 import math
 import random
 import re
@@ -58,6 +59,8 @@ class Problem:
     verified: bool | None = True
     check_note: str = ""
     skill: str = ""
+    figure: str = ""  # SVG drawn from the problem's values (see drawings.py); empty if none
+    key: str = ""  # identity for "no repeats": the question, plus the figure when there is one
     # Machine-readable data for tests and the whole-number filter, never sent to the client.
     # Physics variants store {"given": {name: value}, "ans": {name: value}}.
     facts: dict = field(default_factory=dict, repr=False)
@@ -75,6 +78,7 @@ class Ctx:
     nice: bool = False  # physics: prefer whole-number givens and answers (conceptual physics)
     form: str = "both"  # math: "exact" (π, radicals), "decimal", or "both"
     places: int = 1  # math: round decimal answers to this many decimal places
+    figures: bool = True  # include figures (problems that can't be done without one keep theirs)
 
     # ---- physics
     def fmt(self, v: float) -> str:
@@ -139,6 +143,7 @@ class Topic:
     # Answer options the GUI should offer: exact/decimal choice, and a rounding place.
     exact_forms: bool = False
     rounding: bool = False
+    figures: bool = False  # some problems come with a figure (the GUI offers a figures toggle)
     variants: dict[int, list[Variant]] = field(default_factory=dict)
     skills: dict[str, Skill] = field(default_factory=dict)
 
@@ -152,6 +157,7 @@ class Topic:
             "courses": self.courses,
             "exact_forms": self.exact_forms,
             "rounding": self.rounding,
+            "figures": self.figures,
             "levels": sorted(self.variants),
             "skills": [{"id": s.id, "label": s.label, "levels": sorted(s.levels)} for s in self.skills.values()],
         }
@@ -161,9 +167,9 @@ TOPICS: dict[str, Topic] = {}
 
 
 def topic(id: str, subject: str, category: str, name: str, description: str, *, courses: list[str],
-          exact_forms: bool = False, rounding: bool = False) -> None:
+          exact_forms: bool = False, rounding: bool = False, figures: bool = False) -> None:
     assert courses and all(c in COURSES and COURSES[c][1] == subject for c in courses), (id, courses)
-    TOPICS[id] = Topic(id, subject, category, name, description, courses, exact_forms, rounding)
+    TOPICS[id] = Topic(id, subject, category, name, description, courses, exact_forms, rounding, figures)
 
 
 def slug(label: str) -> str:
@@ -213,11 +219,20 @@ def _run(v: Variant, topic_id: str, ctx: Ctx) -> Problem:
     p.facts.setdefault("g", ctx.g)
     p.facts.setdefault("form", ctx.form)
     p.facts.setdefault("places", ctx.places)
+    if not ctx.figures and not p.facts.get("figure_required"):
+        p.figure = ""
     return p
 
 
 def norm_question(q: str) -> str:
     return re.sub(r"\s+", " ", q).strip().lower()
+
+
+def problem_key(question: str, figure: str = "") -> str:
+    """Two problems are the same if the question and the figure match; "Find the slope of the line
+    shown" is a different problem for every graph."""
+    key = norm_question(question)
+    return f"{key}#{hashlib.sha1(figure.encode()).hexdigest()[:12]}" if figure else key
 
 
 def is_nice_problem(p: Problem) -> bool:
@@ -232,7 +247,7 @@ MAX_TRIES = 40
 
 
 def generate_set(topic_id: str, difficulty: int, count: int, rng: random.Random, *, sig: int = 3,
-                 g: float = 9.8, nice: bool = False, form: str = "both", places: int = 1,
+                 g: float = 9.8, nice: bool = False, form: str = "both", places: int = 1, figures: bool = True,
                  skills: list[str] | None = None, seen: set[str] | None = None) -> list[Problem]:
     """Generate ``count`` problems for one section.
 
@@ -253,10 +268,12 @@ def generate_set(topic_id: str, difficulty: int, count: int, rng: random.Random,
         v = order[i % len(order)]
         best, best_score = None, -1
         for _ in range(MAX_TRIES):
-            ctx = Ctx(rng=rng, difficulty=difficulty, sig=sig, g=g, nice=nice, form=form, places=places)
+            ctx = Ctx(rng=rng, difficulty=difficulty, sig=sig, g=g, nice=nice, form=form, places=places,
+                      figures=figures)
             p = _run(v, topic_id, ctx)
             p.facts["slot"] = pool.index(v)  # which problem type, for rotation checks
-            if norm_question(p.question) in seen:
+            p.key = problem_key(p.question, p.figure)
+            if p.key in seen:
                 if best is None:
                     best = p  # pool exhausted: a repeat beats an empty slot
                 continue
@@ -265,7 +282,7 @@ def generate_set(topic_id: str, difficulty: int, count: int, rng: random.Random,
                 best, best_score = p, score
             if score == 3:
                 break
-        seen.add(norm_question(best.question))
+        seen.add(best.key)
         answers.add(best.answer)
         out.append(best)
     return out
@@ -273,7 +290,7 @@ def generate_set(topic_id: str, difficulty: int, count: int, rng: random.Random,
 
 def generate(topic_id: str, difficulty: int, rng: random.Random, avoid: set[str] | None = None,
              **options) -> Problem:
-    """One problem (e.g. to replace a single problem in a worksheet), avoiding ``avoid``."""
+    """One problem (e.g. to replace a single problem in a worksheet), avoiding ``avoid`` (problem keys)."""
     seen = {norm_question(q) for q in avoid} if avoid else set()
     return generate_set(topic_id, difficulty, 1, rng, seen=seen, **options)[0]
 

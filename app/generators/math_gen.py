@@ -8,6 +8,7 @@ from fractions import Fraction
 
 import sympy as sp
 
+from . import drawings as draw
 from .core import Ctx, Problem, U, frac, num, nz, sig, topic, variant
 
 x, y = sp.symbols("x y")
@@ -478,34 +479,35 @@ def _log_shift(ctx: Ctx) -> Problem:
 # ======================================================== Geometry
 
 topic("pythagorean", "math", "Right triangles", "Pythagorean theorem",
-      "Missing sides of right triangles, the converse, and 3-D diagonals.", courses=['geo'], exact_forms=True, rounding=True)
+      "Missing sides of right triangles, the converse, and 3-D diagonals.", courses=['geo'], exact_forms=True, rounding=True, figures=True)
 
 _TRIPLES = [(3, 4, 5), (5, 12, 13), (8, 15, 17), (7, 24, 25), (20, 21, 29), (9, 40, 41), (12, 35, 37),
             (11, 60, 61), (28, 45, 53), (33, 56, 65)]
 
 # Each context: (unit, largest sensible length, text asking for the hypotenuse,
-#                text asking for leg b given hypotenuse c and leg a, realistic shape test on (a, b)).
+#                text asking for leg b given hypotenuse c and leg a, realistic shape test on (a, b),
+#                whether leg a is vertical in the story — for drawing the figure).
 # Leg a plays the same role in both texts (e.g. the ladder's foot distance).
 _ANY = lambda a, b: True  # noqa: E731
 _PYTH_CONTEXTS = [
     ("cm", 100, "A right triangle has legs ${a}$ and ${b}$. Find the length of the hypotenuse.",
-     "A right triangle has a hypotenuse of ${c}$ and one leg of ${a}$. Find the other leg.", _ANY),
+     "A right triangle has a hypotenuse of ${c}$ and one leg of ${a}$. Find the other leg.", _ANY, False),
     ("ft", 40, "A ladder leans against a wall. Its foot is ${a}$ from the wall and its top is ${b}$ up the wall. "
            "How long is the ladder?",
      "A ${c}$ ladder leans against a wall with its foot ${a}$ from the wall. How high up the wall does it reach?",
-     lambda a, b: a <= 0.6 * b),  # ladders lean steeply
+     lambda a, b: a <= 0.6 * b, False),  # ladders lean steeply
     ("in", 100, "A rectangular TV screen is ${b}$ wide and ${a}$ tall. How long is its diagonal?",
      "A TV screen has a ${c}$ diagonal and is ${a}$ tall. How wide is it?",
-     lambda a, b: 1.3 <= b / a <= 1.9),  # real screen proportions
+     lambda a, b: 1.3 <= b / a <= 1.9, True),  # real screen proportions
     ("m", 100, "A rectangular field measures ${a}$ by ${b}$. How long is a straight path between opposite corners?",
      "A straight path between opposite corners of a rectangular field is ${c}$ long. One side of the field "
-     "is ${a}$. How long is the other side?", _ANY),
+     "is ${a}$. How long is the other side?", _ANY, False),
     ("m", 100, "A kite is flying ${b}$ above a point on the ground that is ${a}$ from the person holding the "
           "string. If the string is straight, how long is it?",
      "A kite on a ${c}$ straight string is directly above a point ${a}$ from the person holding it. "
-     "How high is the kite?", lambda a, b: 0.3 <= b / a <= 4),
+     "How high is the kite?", lambda a, b: 0.3 <= b / a <= 4, False),
     ("mi", 100, "A plane flies ${a}$ north and then ${b}$ east. How far is it from its starting point?",
-     "A boat ends up ${c}$ from port after sailing ${a}$ north and then due east. How far east did it sail?", _ANY),
+     "A boat ends up ${c}$ from port after sailing ${a}$ north and then due east. How far east did it sail?", _ANY, True),
 ]
 
 
@@ -513,6 +515,14 @@ def _fill(text: str, unit: str, **vals) -> str:
     for k, v in vals.items():
         text = text.replace(f"${{{k}}}$", f"${v}{U(unit)}$")
     return text
+
+
+def _pyth_figure(a, b, c, unit: str, a_vertical: bool, unknown: str) -> str:
+    """Right triangle for a Pythagorean problem: legs a and b, hypotenuse c, with the unknown side marked x."""
+    labels = {k: ("x" if k == unknown else f"{num(float(v))} {unit}") for k, v in (("a", a), ("b", b), ("c", c))}
+    if a_vertical:  # draw leg a upright, as in the story
+        return draw.right_triangle(float(b), float(a), label_a=labels["b"], label_b=labels["a"], label_c=labels["c"])
+    return draw.right_triangle(float(a), float(b), label_a=labels["a"], label_b=labels["b"], label_c=labels["c"])
 
 
 def _scaled_triple(ctx: Ctx, cmax: int = 100, fits=_ANY):
@@ -524,18 +534,20 @@ def _scaled_triple(ctx: Ctx, cmax: int = 100, fits=_ANY):
 
 @variant("pythagorean", 1, "Find the hypotenuse")
 def _pyth_hyp(ctx: Ctx) -> Problem:
-    unit, cmax, hyp_text, _, fits = ctx.rng.choice(_PYTH_CONTEXTS)
+    unit, cmax, hyp_text, _, fits, a_vert = ctx.rng.choice(_PYTH_CONTEXTS)
     a, b, c = _scaled_triple(ctx, cmax, fits)
     return Problem(_fill(hyp_text, unit, a=a, b=b), f"${c}{U(unit)}$",
-                   rf"$c = \sqrt{{{a}^2 + {b}^2}} = \sqrt{{{c * c}}} = {c}$", facts={"a": a, "b": b, "c": c})
+                   rf"$c = \sqrt{{{a}^2 + {b}^2}} = \sqrt{{{c * c}}} = {c}$", facts={"a": a, "b": b, "c": c},
+                   figure=_pyth_figure(a, b, c, unit, a_vert, "c"))
 
 
 @variant("pythagorean", 2, "Find a leg")
 def _pyth_leg(ctx: Ctx) -> Problem:
-    unit, cmax, _, leg_text, fits = ctx.rng.choice(_PYTH_CONTEXTS)
+    unit, cmax, _, leg_text, fits, a_vert = ctx.rng.choice(_PYTH_CONTEXTS)
     a, b, c = _scaled_triple(ctx, cmax, fits)
     return Problem(_fill(leg_text, unit, a=a, c=c), f"${b}{U(unit)}$",
-                   rf"$b = \sqrt{{{c}^2 - {a}^2}} = \sqrt{{{b * b}}} = {b}$", facts={"a": a, "b": b, "c": c})
+                   rf"$b = \sqrt{{{c}^2 - {a}^2}} = \sqrt{{{b * b}}} = {b}$", facts={"a": a, "b": b, "c": c},
+                   figure=_pyth_figure(a, b, c, unit, a_vert, "b"))
 
 
 @variant("pythagorean", 2, "Is it a right triangle?")
@@ -559,7 +571,7 @@ def _pyth_converse(ctx: Ctx) -> Problem:
 
 @variant("pythagorean", 3, "Simplest radical form")
 def _pyth_radical(ctx: Ctx) -> Problem:
-    unit, _, hyp_text, leg_text, fits = ctx.rng.choice(_PYTH_CONTEXTS)
+    unit, _, hyp_text, leg_text, fits, a_vert = ctx.rng.choice(_PYTH_CONTEXTS)
     is_square = lambda n: math.isqrt(n) ** 2 == n  # noqa: E731
     if ctx.rng.random() < 0.5:
         while True:
@@ -568,6 +580,7 @@ def _pyth_radical(ctx: Ctx) -> Problem:
                 break
         exact, q = sp.sqrt(a * a + b * b), _fill(hyp_text, unit, a=a, b=b)
         facts = {"a": a, "b": b, "c": exact}
+        fig = _pyth_figure(a, b, float(exact), unit, a_vert, "c")
     else:
         while True:
             a, c = ctx.rng.randint(2, 20), ctx.rng.randint(5, 26)
@@ -575,8 +588,9 @@ def _pyth_radical(ctx: Ctx) -> Problem:
                 break
         exact, q = sp.sqrt(c * c - a * a), _fill(leg_text, unit, a=a, c=c)
         facts = {"a": a, "b": exact, "c": c}
+        fig = _pyth_figure(a, float(exact), c, unit, a_vert, "b")
     return Problem(q + ctx.form_note("in simplest radical form"),
-                   f"${ctx.exact_or_decimal(L(exact), float(exact), unit)}$", facts=facts)
+                   f"${ctx.exact_or_decimal(L(exact), float(exact), unit)}$", facts=facts, figure=fig)
 
 
 @variant("pythagorean", 3, "3-D diagonals")
@@ -590,32 +604,34 @@ def _pyth_box(ctx: Ctx) -> Problem:
                    "from a bottom corner to the opposite top corner?"
                    + ("" if d.is_Integer else ctx.form_note("in simplest radical form")),
                    f"${ans}$", rf"$d = \sqrt{{{l}^2 + {w}^2 + {h}^2}} = \sqrt{{{l * l + w * w + h * h}}}$",
-                   facts={"dims": (l, w, h), "d": d})
+                   facts={"dims": (l, w, h), "d": d},
+                   figure=draw.box(l, w, h, f"{l} {unit}", f"{w} {unit}", f"{h} {unit}", diagonal=True))
 
 
 topic("area", "math", "Area & perimeter", "Area & perimeter",
-      "Rectangles, triangles, circles, trapezoids and composite shapes.", courses=['geo'], exact_forms=True, rounding=True)
+      "Rectangles, triangles, circles, trapezoids and composite shapes.", courses=['geo'], exact_forms=True, rounding=True, figures=True)
 
 
 @variant("area", 1, "Rectangles")
 def _area_rect(ctx: Ctx) -> Problem:
     w, h = ctx.rng.sample(range(2, 31), 2)
     return Problem(f"Find the area of a rectangle ${w}$ cm by ${h}$ cm.", f"${w * h}{U('cm^2')}$",
-                   facts={"ans": w * h})
+                   facts={"ans": w * h}, figure=draw.rectangle(w, h, f"{w} cm", f"{h} cm"))
 
 
 @variant("area", 1, "Rectangles")
 def _perim_rect(ctx: Ctx) -> Problem:
     w, h = ctx.rng.sample(range(2, 31), 2)
     return Problem(f"Find the perimeter of a rectangle ${w}$ m by ${h}$ m.", f"${2 * (w + h)}{U('m')}$",
-                   facts={"ans": 2 * (w + h)})
+                   facts={"ans": 2 * (w + h)}, figure=draw.rectangle(w, h, f"{w} m", f"{h} m"))
 
 
 @variant("area", 1, "Triangles")
 def _area_tri(ctx: Ctx) -> Problem:
     b, h = ctx.rng.randint(2, 30), ctx.rng.randint(2, 30)
     return Problem(f"Find the area of a triangle with base ${b}$ in and height ${h}$ in.",
-                   f"${num(b * h / 2)}{U('in^2')}$", rf"$\frac{{1}}{{2}}({b})({h})$", facts={"ans": b * h / 2})
+                   f"${num(b * h / 2)}{U('in^2')}$", rf"$\frac{{1}}{{2}}({b})({h})$", facts={"ans": b * h / 2},
+                   figure=draw.triangle_base_height(b, h, f"{b} in", f"{h} in"))
 
 
 @variant("area", 2, "Circle area")
@@ -624,19 +640,23 @@ def _area_circle(ctx: Ctx) -> Problem:
     if ctx.rng.random() < 0.5:
         return Problem(f"Find the area of a circle with radius ${r}$ m." + ctx.form_note("in terms of $\\pi$"),
                        f"${ctx.exact_or_decimal(f'{r * r}\\pi', math.pi * r * r, 'm^2')}$",
-                       rf"$A = \pi r^2 = \pi({r})^2$", facts={"ans": math.pi * r * r})
+                       rf"$A = \pi r^2 = \pi({r})^2$", facts={"ans": math.pi * r * r},
+                       figure=draw.circle(r, f"{r} m"))
     return Problem(f"Find the area of a circle with diameter ${2 * r}$ m." + ctx.form_note("in terms of $\\pi$"),
                    f"${ctx.exact_or_decimal(f'{r * r}\\pi', math.pi * r * r, 'm^2')}$",
-                   rf"$r = {r}$, $A = \pi r^2$", facts={"ans": math.pi * r * r})
+                   rf"$r = {r}$, $A = \pi r^2$", facts={"ans": math.pi * r * r},
+                   figure=draw.circle(r, f"{2 * r} m", diameter=True))
 
 
 @variant("area", 2, "Circumference")
 def _circumference(ctx: Ctx) -> Problem:
     r = ctx.rng.randint(2, 25)
-    given = f"radius ${r}$ cm" if ctx.rng.random() < 0.5 else f"diameter ${2 * r}$ cm"
+    by_radius = ctx.rng.random() < 0.5
+    given = f"radius ${r}$ cm" if by_radius else f"diameter ${2 * r}$ cm"
     return Problem(f"Find the circumference of a circle with {given}." + ctx.form_note("in terms of $\\pi$"),
                    f"${ctx.exact_or_decimal(f'{2 * r}\\pi', 2 * math.pi * r, 'cm')}$",
-                   r"$C = 2\pi r = \pi d$", facts={"ans": 2 * math.pi * r})
+                   r"$C = 2\pi r = \pi d$", facts={"ans": 2 * math.pi * r},
+                   figure=draw.circle(r, f"{r} cm") if by_radius else draw.circle(r, f"{2 * r} cm", diameter=True))
 
 
 @variant("area", 2, "Trapezoids")
@@ -644,7 +664,7 @@ def _area_trap(ctx: Ctx) -> Problem:
     a, b, h = ctx.rng.randint(3, 15), ctx.rng.randint(16, 30), ctx.rng.randint(2, 15)
     return Problem(f"A trapezoid has parallel sides ${a}$ cm and ${b}$ cm and height ${h}$ cm. Find its area.",
                    f"${num((a + b) * h / 2)}{U('cm^2')}$", rf"$\frac{{{a} + {b}}}{{2}} \times {h}$",
-                   facts={"ans": (a + b) * h / 2})
+                   facts={"ans": (a + b) * h / 2}, figure=draw.trapezoid(a, b, h, f"{a} cm", f"{b} cm", f"{h} cm"))
 
 
 @variant("area", 3, "Composite figures")
@@ -660,7 +680,7 @@ def _area_window(ctx: Ctx) -> Problem:
                    f"(a) ${ctx.exact_or_decimal(area_t, area, 'in^2')}$ "
                    f"(b) ${ctx.exact_or_decimal(per_t, per, 'in')}$",
                    rf"Area $= {w}\cdot{h} + \tfrac{{1}}{{2}}\pi({num(r)})^2$; perimeter $= 2({h}) + {w} + \pi({num(r)})$",
-                   facts={"ans": (area, per)})
+                   facts={"ans": (area, per)}, figure=draw.window(w, h, f"{w} in", f"{h} in"))
 
 
 @variant("area", 3, "Composite figures")
@@ -674,11 +694,12 @@ def _area_track(ctx: Ctx) -> Problem:
                    f"(a) ${ctx.exact_or_decimal(area_t, area, 'm^2')}$ "
                    f"(b) ${ctx.exact_or_decimal(per_t, per, 'm')}$",
                    rf"The two semicircles form a circle of radius ${num(r)}$: area $= {L_}\cdot{d} + \pi({num(r)})^2$; "
-                   rf"perimeter $= 2({L_}) + 2\pi({num(r)})$", facts={"ans": (area, per)})
+                   rf"perimeter $= 2({L_}) + 2\pi({num(r)})$", facts={"ans": (area, per)},
+                   figure=draw.stadium(L_, d, f"{L_} m", f"{d} m"))
 
 
 topic("slope", "math", "Lines & coordinate geometry", "Slope & lines",
-      "Slope between points, equation of a line, perpendicular lines.", courses=['alg1', 'geo'])
+      "Slope between points, equation of a line, perpendicular lines.", courses=['alg1', 'geo'], figures=True)
 
 
 def _line_tex(m: Fraction, b: Fraction) -> str:
@@ -699,6 +720,41 @@ def _slope1(ctx: Ctx) -> Problem:
     return Problem(f"Find the slope of the line through $({x1}, {y1})$ and $({x2}, {y2})$.",
                    f"$m = {frac(m)}$", rf"$m = \frac{{{y2} - ({y1})}}{{{x2} - ({x1})}}$",
                    facts={"points": [(x1, y1), (x2, y2)], "m": m})
+
+
+def _lattice_line(ctx: Ctx, span: int = 7):
+    """Two lattice points on a non-horizontal, non-vertical line, both inside the grid."""
+    while True:
+        p = (ctx.rng.randint(-span + 1, span - 1), ctx.rng.randint(-span + 1, span - 1))
+        q = (ctx.rng.randint(-span + 1, span - 1), ctx.rng.randint(-span + 1, span - 1))
+        if p[0] != q[0] and p[1] != q[1] and abs(q[0] - p[0]) >= 2:
+            return tuple(sorted((p, q)))
+
+
+@variant("slope", 1, "Slope from a graph")
+def _slope_graph(ctx: Ctx) -> Problem:
+    (x1, y1), (x2, y2) = _lattice_line(ctx)
+    m = Fraction(y2 - y1, x2 - x1)
+    return Problem("Find the slope of the line shown. The marked points are on the grid.",
+                   f"$m = {frac(m)}$", f"Rise over run between the marked points: $\\frac{{{y2 - y1}}}{{{x2 - x1}}}$",
+                   facts={"points": [(x1, y1), (x2, y2)], "m": m, "figure_required": True},
+                   figure=draw.coordinate_line((x1, y1), (x2, y2)))
+
+
+@variant("slope", 2, "Equation of a line from a graph")
+def _slope_graph_eq(ctx: Ctx) -> Problem:
+    while True:
+        b = ctx.rng.randint(-5, 5)
+        run, rise = ctx.rng.randint(1, 4), nz(ctx.rng, -5, 5)
+        k = ctx.rng.randint(1, 2)
+        q = (run * k, b + rise * k)
+        if abs(q[1]) <= 7 and run * k <= 7 and math.gcd(rise, run) == 1:
+            break
+    m = Fraction(rise, run)
+    return Problem("Write the equation of the line shown in slope-intercept form.",
+                   f"${_line_tex(m, Fraction(b))}$", f"$y$-intercept ${b}$, slope $\\frac{{{rise}}}{{{run}}}$",
+                   facts={"points": [(0, b), q], "m": m, "b": Fraction(b), "figure_required": True},
+                   figure=draw.coordinate_line((0, b), q))
 
 
 @variant("slope", 2, "Equation of a line")
@@ -726,7 +782,7 @@ def _slope3(ctx: Ctx) -> Problem:
 
 
 topic("trig_right", "math", "Right triangles", "Right-triangle trigonometry",
-      "SOH-CAH-TOA: missing sides and angles.", courses=['geo', 'precalc'], rounding=True)
+      "SOH-CAH-TOA: missing sides and angles.", courses=['geo', 'precalc'], rounding=True, figures=True)
 
 _SIDE_RATIO = {"hypotenuse": lambda t: 1, "opposite": math.sin, "adjacent": math.cos}
 
@@ -742,10 +798,16 @@ def _trig_side(ctx: Ctx, known: str, want: str) -> Problem:
     fn = {("hypotenuse", "opposite"): r"\sin", ("hypotenuse", "adjacent"): r"\cos",
           ("adjacent", "opposite"): r"\tan", ("opposite", "hypotenuse"): r"\sin",
           ("adjacent", "hypotenuse"): r"\cos", ("opposite", "adjacent"): r"\tan"}[(known, want)]
+    hyp = v / _SIDE_RATIO[known](t)
+    sides = {"adjacent": hyp * math.cos(t), "opposite": hyp * math.sin(t), "hypotenuse": hyp}
+    label = {known: f"{v} cm", want: "x"}
+    fig = draw.right_triangle(sides["adjacent"], sides["opposite"], label_a=label.get("adjacent", ""),
+                              label_b=label.get("opposite", ""), label_c=label.get("hypotenuse", ""),
+                              angle_at="base", angle_label=f"{th}°")
     return Problem(f"In a right triangle, one acute angle measures ${th}^\\circ$ and {_side_phrase(known)} is "
                    f"${v}$ cm long. Find the length of {_side_phrase(want)}." + ctx.round_note(),
                    f"${ctx.rnd(ans)}{U('cm')}$", f"Use ${fn}({th}^\\circ)$",
-                   facts={"theta": th, "known": (known, v), "want": (want, ans)})
+                   facts={"theta": th, "known": (known, v), "want": (want, ans)}, figure=fig)
 
 
 # Level 1: the unknown is found by multiplying; level 2: by dividing.
@@ -766,12 +828,16 @@ def _trig_angle(ctx: Ctx) -> Problem:
                        "$\\theta$). Find $\\theta$ in degrees." + ctx.round_note(),
                        f"$\\theta \\approx {ctx.rnd(th)}^\\circ$",
                        rf"$\theta = \tan^{{-1}}\left(\frac{{{a}}}{{{b}}}\right)$",
-                       facts={"opp": a, "adj": b, "theta": th})
+                       facts={"opp": a, "adj": b, "theta": th},
+                       figure=draw.right_triangle(b, a, label_a=f"{b} m", label_b=f"{a} m", angle_at="base",
+                                                  angle_label="θ"))
     a, c = min(a, b), max(a, b)
     th = math.degrees(math.asin(a / c))
     return Problem(f"A ${c}$ ft ramp rises ${a}$ ft. What angle does the ramp make with the ground?"
                    + ctx.round_note(), f"$\\theta \\approx {ctx.rnd(th)}^\\circ$",
-                   rf"$\theta = \sin^{{-1}}\left(\frac{{{a}}}{{{c}}}\right)$", facts={"opp": a, "hyp": c, "theta": th})
+                   rf"$\theta = \sin^{{-1}}\left(\frac{{{a}}}{{{c}}}\right)$", facts={"opp": a, "hyp": c, "theta": th},
+                   figure=draw.right_triangle(math.sqrt(c * c - a * a), a, label_b=f"{a} ft", label_c=f"{c} ft",
+                                              angle_at="base", angle_label="θ"))
 
 
 # ======================================================== Calculus

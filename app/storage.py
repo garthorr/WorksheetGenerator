@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
     "show_name_date": True,
     "key_solutions": True,
     "sig_figs": 3,
+    "figures": True,  # draw figures for problems that have them
     # Physics defaults (each section can override)
     "physics_g": 9.8,  # 9.8 or 10 m/s^2
     "physics_nice": False,  # whole-number givens/answers, e.g. for conceptual physics

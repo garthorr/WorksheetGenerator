@@ -82,7 +82,7 @@ def outside_math(text: str) -> str:
 @pytest.mark.parametrize("topic,level", LEVELS, ids=ids)
 def test_large_section_has_no_repeats(topic, level):
     for seed in range(2):
-        qs = [norm_question(p.question) for p in generate_set(topic, level, 30, random.Random(seed))]
+        qs = [p.key for p in generate_set(topic, level, 30, random.Random(seed))]
         assert len(set(qs)) == 30, f"only {len(set(qs))} distinct problems in a 30-problem section"
 
 
@@ -95,7 +95,7 @@ def test_no_repeats_across_sections_of_a_worksheet():
     seen: set[str] = set()
     qs = []
     for i in range(4):
-        qs += [p.question for p in generate_set("pythagorean", 1, 15, random.Random(i), seen=seen)]
+        qs += [p.key for p in generate_set("pythagorean", 1, 15, random.Random(i), seen=seen)]
     assert len(set(qs)) == len(qs) == 60
 
 
@@ -387,6 +387,29 @@ def _laws():
     # Each check uses a different relation than the generator did, where one exists.
     L = LAWS
     L["_kin_final_v"] = lambda G, A, g: c((A["v"] - G["v0"]) / G["t"], G["a"])
+
+    def integrate(pts, absolute=False, n=20000):  # brute-force area under a piecewise-linear graph
+        t0, t1 = pts[0][0], pts[-1][0]
+        def v(t):
+            for (a, va), (b, vb) in zip(pts, pts[1:]):
+                if a <= t <= b:
+                    return va + (vb - va) * (t - a) / (b - a)
+        h = (t1 - t0) / n
+        return sum((abs(v(t0 + (i + 0.5) * h)) if absolute else v(t0 + (i + 0.5) * h)) * h for i in range(n))
+
+    def slope(pts, i):
+        (a, va), (b, vb) = pts[i], pts[i + 1]
+        return (vb - va) / (b - a)
+    L["_kin_xt_graph"] = lambda G, A, g: c(A["vA"], slope(G["graph"], 0)) and c(A["vB"], slope(G["graph"], 2))
+    L["_kin_vt_graph"] = lambda G, A, g: (c(A["a"], slope(G["graph"], 0))
+                                          and math.isclose(A["d"], integrate(G["graph"]), abs_tol=1e-3))
+    L["_kin_vt_graph_signed"] = lambda G, A, g: (math.isclose(A["d"], integrate(G["graph"]), abs_tol=1e-3)
+                                                 and math.isclose(A["dist"], integrate(G["graph"], True), abs_tol=1e-3)
+                                                 and A["dist"] > abs(A["d"]))
+    L["_newton_fbd"] = lambda G, A, g: (c(A["F"], abs(G["forces"]["right"] - G["forces"]["left"]))
+                                        and G["forces"]["up"] == G["forces"]["down"] and c(A["a"] * G["m"], A["F"]))
+    L["_newton_fbd_2d"] = lambda G, A, g: c(A["F"] ** 2, (G["forces"]["right"] - G["forces"]["left"]) ** 2
+                                            + (G["forces"]["up"] - G["forces"]["down"]) ** 2)
     L["_kin_free_fall"] = lambda G, A, g: c(0.5 * g * A["t"] ** 2, G["h"]) and c(A["v"] ** 2, 2 * g * G["h"])
     L["_kin_displacement"] = lambda G, A, g: c(A["d"], (2 * G["v0"] + G["a"] * G["t"]) / 2 * G["t"])
     L["_kin_braking"] = lambda G, A, g: c(A["d"], G["v0"] / 2 * A["t"])  # average speed x time
@@ -507,7 +530,8 @@ def test_physics(topic, level, g, nice):
     for p in problems(topic, level, g=g, nice=nice):
         G, A, var = p.facts["given"], p.facts["ans"], p.facts["variant"]
         assert var in LAWS, f"{var} has no physics check in tests/test_quality.py"
-        assert LAWS[var](G, A, g), f"{var}: answers violate the check law {G} {A}"
+        drawn = {k: p.facts[k] for k in ("graph", "forces") if k in p.facts}  # values shown only in the figure
+        assert LAWS[var]({**G, **drawn}, A, g), f"{var}: answers violate the check law {G} {drawn} {A}"
         for k, val in G.items():
             if val == 0 or k == "n":  # stated in words: "from rest", "fourth harmonic"
                 continue
@@ -540,7 +564,8 @@ def _ctx(seed, level, g):
 
 # AP-level problem types whose values can't all be simple (trig, square roots, physical constants).
 NOT_WHOLE_NUMBER = {"_circ_orbit", "_coulomb", "_field", "_snell", "_lens", "_gas", "_circ_string",
-                    "_string_harmonic", "_heat_melt", "_proj_horiz_full", "_circ_combo"}
+                    "_string_harmonic", "_heat_melt", "_proj_horiz_full", "_circ_combo",
+                    "_newton_fbd_2d"}  # magnitude is whole in that mode; the direction angle isn't
 
 
 def test_whole_number_mode():

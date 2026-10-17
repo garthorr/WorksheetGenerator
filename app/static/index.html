@@ -136,6 +136,7 @@
       <label>Significant figures (decimal answers) <input name="sig_figs" type="number" min="1" max="6"></label>
       <label class="check"><input type="checkbox" name="show_name_date"> Name / date lines</label>
       <label class="check"><input type="checkbox" name="key_solutions"> Show worked steps in answer key</label>
+      <label class="check"><input type="checkbox" name="figures"> Draw figures (diagrams, graphs, circuits)</label>
     </div>
 
     <h2>Math defaults</h2>
@@ -177,6 +178,8 @@
     <label>Question <textarea id="edit-q" rows="4"></textarea></label>
     <label>Answer <textarea id="edit-a" rows="2"></textarea></label>
     <label>Solution / steps <textarea id="edit-s" rows="3"></textarea></label>
+    <label class="check" id="edit-figure-row"><input type="checkbox" id="edit-keep-figure" checked>
+      Keep the figure (untick if you changed numbers it shows)</label>
     <div class="edit-preview" id="edit-preview"></div>
     <div class="form-actions">
       <button class="btn" value="cancel">Cancel</button>

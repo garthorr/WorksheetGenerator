@@ -183,6 +183,8 @@ nav { display: flex; gap: 4px; }
 .paper .problem .q .katex-display { margin: .4em 0; text-align: left; }
 .paper .problem .q .katex-display > .katex { text-align: left; }
 .paper .work { grid-column: 2; }
+.paper .problem .figure { display: block; margin: 8px 0 2px; max-width: min(100%, 300px); height: auto; }
+.paper.cols-2 .problem .figure { max-width: 100%; }
 .paper .work.small { height: .7in; } .paper .work.medium { height: 1.4in; } .paper .work.large { height: 2.4in; }
 .paper .placeholder { color: #888; font-style: italic; font-family: system-ui, sans-serif; font-size: 10.5pt; padding: 8px 0; }
 .paper .sec-error { color: #b42318; font-family: system-ui, sans-serif; font-size: 10.5pt; }

@@ -17,7 +17,7 @@ import re
 import sys
 
 from app.generators import TOPICS, generate_set
-from app.generators.core import is_nice_problem, norm_question
+from app.generators.core import is_nice_problem
 
 
 def audit(topic: str, level: int, n: int = 300, sections: int = 20) -> dict:
@@ -25,10 +25,10 @@ def audit(topic: str, level: int, n: int = 300, sections: int = 20) -> dict:
     pool = [generate_set(topic, level, 1, rng)[0] for _ in range(n)]
     secs = [generate_set(topic, level, 10, random.Random(f"s{i}")) for i in range(sections)]
     row = {
-        "pool": len({norm_question(p.question) for p in pool}) / n,
+        "pool": len({p.key for p in pool}) / n,
         "words": len({re.sub(r"-?\d+(\.\d+)?", "#", p.question) for p in pool}),
         "types": len(TOPICS[topic].variants[level]),
-        "rep-q": sum(len({norm_question(p.question) for p in s}) < len(s) for s in secs) / sections,
+        "rep-q": sum(len({p.key for p in s}) < len(s) for s in secs) / sections,
         "rep-a": sum(len({p.answer for p in s}) < len(s) for s in secs) / sections,
         "whole": None,
     }
