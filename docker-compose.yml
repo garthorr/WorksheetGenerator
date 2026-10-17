@@ -1,0 +1,34 @@
+services:
+  worksheets:
+    build: .
+    image: worksheet-generator:latest
+    container_name: worksheet-generator
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - worksheet_data:/data
+    networks:
+      - traefik
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    # Lets the container reach Ollama on the Docker host at
+    # http://host.docker.internal:11434 (required on Linux).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.worksheets.rule=Host(`${WORKSHEETS_HOST:-worksheets.tastymath.com}`)"
+      - "traefik.http.routers.worksheets.entrypoints=websecure"
+      - "traefik.http.routers.worksheets.tls=true"
+      - "traefik.http.routers.worksheets.tls.certresolver=${TRAEFIK_CERTRESOLVER:-le}"
+      - "traefik.http.services.worksheets.loadbalancer.server.port=8000"
+
+volumes:
+  worksheet_data:
+
+networks:
+  traefik:
+    external: true
+    name: traefik

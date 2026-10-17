@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worksheet Generator</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232f6fde'/><text x='16' y='23' font-size='18' text-anchor='middle' fill='white' font-family='serif'>∑</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+<header class="topbar no-print">
+  <div class="brand"><span class="logo">∑</span> Worksheet Generator</div>
+  <nav>
+    <button class="nav active" data-view="build">Build</button>
+    <button class="nav" data-view="library">Library</button>
+    <button class="nav" data-view="setup">Setup</button>
+  </nav>
+  <a class="logout" href="/logout" id="logout-link">Log out</a>
+</header>
+
+<!-- ============================================================ BUILD -->
+<main id="view-build" class="view build">
+  <!-- Topic catalog -->
+  <section class="panel catalog no-print">
+    <h2>Topics</h2>
+    <input id="topic-search" type="search" placeholder="Search topics…" autocomplete="off">
+    <div class="chips" id="subject-filter">
+      <button class="chip active" data-subject="all">All</button>
+      <button class="chip" data-subject="math">Math</button>
+      <button class="chip" data-subject="physics">Physics</button>
+    </div>
+    <div id="topic-list" class="topic-list"></div>
+    <div class="custom-topic">
+      <label for="custom-topic-input">Custom topic <span class="tag ai">AI</span></label>
+      <p class="hint">Anything not in the list. Ollama writes the problems and answers are formula-checked.</p>
+      <div class="row">
+        <select id="custom-subject" aria-label="Subject for custom topic">
+          <option value="math">Math</option>
+          <option value="physics">Physics</option>
+        </select>
+        <input id="custom-topic-input" placeholder="e.g. Carnot engine efficiency">
+      </div>
+      <button class="btn" id="add-custom">+ Add custom topic</button>
+    </div>
+  </section>
+
+  <!-- Worksheet builder -->
+  <section class="panel builder no-print">
+    <h2>Worksheet</h2>
+    <label>Title <input id="ws-title"></label>
+    <label>Instructions <textarea id="ws-instructions" rows="2" placeholder="Show all work. Round to 3 significant figures."></textarea></label>
+    <div class="sections-head">
+      <h3>Sections</h3>
+      <span class="hint" id="problem-total"></span>
+    </div>
+    <div id="sections"></div>
+    <p class="empty-hint" id="sections-empty">Pick a topic on the left to add a section.</p>
+    <div class="generate-bar">
+      <label class="seed">Seed <input id="ws-seed" type="number" min="1" placeholder="random"></label>
+      <button class="btn icon" id="seed-random" title="New random seed">🎲</button>
+      <button class="btn primary" id="generate">Generate</button>
+    </div>
+    <p class="hint">Same seed + same built-in sections = same worksheet.</p>
+  </section>
+
+  <!-- Preview -->
+  <section class="preview-wrap">
+    <div class="preview-toolbar no-print">
+      <div class="seg" id="preview-mode">
+        <button class="active" data-mode="sheet">Worksheet</button>
+        <button data-mode="key">Answer key</button>
+      </div>
+      <div class="spacer"></div>
+      <select id="print-what" aria-label="What to print">
+        <option value="both">Print worksheet + key</option>
+        <option value="sheet">Print worksheet only</option>
+        <option value="key">Print key only</option>
+      </select>
+      <button class="btn" id="print">Print / PDF</button>
+      <button class="btn" id="save">Save</button>
+      <button class="btn" id="export">Export JSON</button>
+    </div>
+    <div id="status" class="status no-print" hidden></div>
+    <div id="paper-sheet" class="paper"></div>
+    <div id="paper-key" class="paper key"></div>
+  </section>
+</main>
+
+<!-- ============================================================ LIBRARY -->
+<main id="view-library" class="view library no-print" hidden>
+  <section class="panel wide">
+    <h2>Saved worksheets</h2>
+    <table class="table">
+      <thead><tr><th>Title</th><th>Problems</th><th>Updated</th><th></th></tr></thead>
+      <tbody id="library-rows"></tbody>
+    </table>
+    <p class="empty-hint" id="library-empty" hidden>No saved worksheets yet. Build one and click Save.</p>
+  </section>
+</main>
+
+<!-- ============================================================ SETUP -->
+<main id="view-setup" class="view setup no-print" hidden>
+  <form class="panel wide" id="settings-form">
+    <h2>Ollama (AI generation)</h2>
+    <p class="hint">Built-in topics never need AI. Ollama is used for custom topics and for sections set to “AI”.</p>
+    <div class="grid2">
+      <label>Ollama URL <input name="ollama_url" placeholder="http://host.docker.internal:11434"></label>
+      <label>Model
+        <span class="row">
+          <select name="ollama_model" id="model-select"></select>
+          <button type="button" class="btn" id="test-ollama">Test &amp; refresh</button>
+        </span>
+      </label>
+      <label>Temperature <input name="ollama_temperature" type="number" step="0.1" min="0" max="2"></label>
+      <label>Timeout (seconds) <input name="ollama_timeout" type="number" min="10" max="1800"></label>
+      <label class="check"><input type="checkbox" name="ai_strict"> Strict: discard and retry AI problems whose answers fail the formula check</label>
+    </div>
+    <div id="ollama-status" class="status"></div>
+
+    <h2>Worksheet defaults</h2>
+    <div class="grid2">
+      <label>Default title <input name="default_title"></label>
+      <label>Header line (class / teacher) <input name="header_line" placeholder="Physics 101 · Mr. Smith"></label>
+      <label>Paper size
+        <select name="paper"><option value="letter">US Letter</option><option value="a4">A4</option></select>
+      </label>
+      <label>Columns
+        <select name="columns"><option value="1">1</option><option value="2">2</option></select>
+      </label>
+      <label>Work space per problem
+        <select name="work_space">
+          <option value="none">None</option><option value="small">Small</option>
+          <option value="medium">Medium</option><option value="large">Large</option>
+        </select>
+      </label>
+      <label>Significant figures (decimal answers) <input name="sig_figs" type="number" min="1" max="6"></label>
+      <label class="check"><input type="checkbox" name="show_name_date"> Name / date lines</label>
+      <label class="check"><input type="checkbox" name="key_solutions"> Show worked steps in answer key</label>
+    </div>
+
+    <h2>Physics defaults</h2>
+    <p class="hint">Each physics section can override these.</p>
+    <div class="grid2">
+      <label>Gravitational acceleration g
+        <select name="physics_g"><option value="9.8">9.8 m/s²</option><option value="10">10 m/s²</option></select>
+      </label>
+      <label class="check"><input type="checkbox" name="physics_nice"> Whole-number values (conceptual physics)</label>
+    </div>
+    <div class="form-actions"><button class="btn primary" type="submit">Save settings</button>
+      <span id="settings-saved" class="hint"></span></div>
+  </form>
+</main>
+
+<!-- Edit dialog -->
+<dialog id="edit-dialog">
+  <form method="dialog" class="edit-form">
+    <h3>Edit problem</h3>
+    <p class="hint">Use <code>$…$</code> for inline math and <code>$$…$$</code> for display math.</p>
+    <label>Question <textarea id="edit-q" rows="4"></textarea></label>
+    <label>Answer <textarea id="edit-a" rows="2"></textarea></label>
+    <label>Solution / steps <textarea id="edit-s" rows="3"></textarea></label>
+    <div class="edit-preview" id="edit-preview"></div>
+    <div class="form-actions">
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn primary" value="save" id="edit-save">Save</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>

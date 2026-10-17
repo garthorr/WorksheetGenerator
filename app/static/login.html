@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Worksheet Generator</title>
+  <style>
+    :root { --bg: #f3f4f7; --panel: #fff; --text: #1d2330; --muted: #667085; --border: #dde1e8; --accent: #2f6fde; --err: #c0262d; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #12151b; --panel: #1b2029; --text: #e6e9ef; --muted: #98a2b3; --border: #2d3441; --accent: #6b9cf5; --err: #f87171; } }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+           font-family: system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px; box-sizing: border-box; }
+    form { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: min(340px, 100%); }
+    h1 { font-size: 18px; margin: 0 0 18px; display: flex; gap: 10px; align-items: center; }
+    .logo { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; font-family: serif; }
+    input { width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--panel); color: var(--text); }
+    button { margin-top: 12px; width: 100%; padding: 9px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    .err { color: var(--err); font-size: 13px; margin: 10px 0 0; }
+  </style>
+</head>
+<body>
+  <form method="post" action="/login">
+    <h1><span class="logo">∑</span> Worksheet Generator</h1>
+    <input type="password" name="password" placeholder="Password" autofocus required autocomplete="current-password">
+    <button type="submit">Sign in</button>
+    <p class="err" id="err" hidden>Wrong password.</p>
+  </form>
+  <script>if (location.search.includes("error")) document.getElementById("err").hidden = false;</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Standalone run without Traefik: docker compose -f docker-compose.local.yml up --build
+# then open http://localhost:8080
+services:
+  worksheets:
+    build: .
+    image: worksheet-generator:latest
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8080:8000"
+    volumes:
+      - worksheet_data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  worksheet_data:

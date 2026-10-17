@@ -1,0 +1,9 @@
+{
+  "name": "worksheet-katex-check",
+  "private": true,
+  "description": "Renders generated LaTeX with the same KaTeX version the GUI loads, for tests/test_katex.py",
+  "type": "module",
+  "dependencies": {
+    "katex": "0.16.11"
+  }
+}
