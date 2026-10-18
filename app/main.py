@@ -325,6 +325,7 @@ class SettingsIn(BaseModel):
     ollama_temperature: float | None = Field(None, ge=0, le=2)
     ollama_timeout: int | None = Field(None, ge=10, le=1800)
     ai_strict: bool | None = None
+    ai_think: bool | None = None
     default_title: str | None = Field(None, max_length=200)
     header_line: str | None = Field(None, max_length=200)
     paper: Literal["letter", "a4"] | None = None

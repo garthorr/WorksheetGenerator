@@ -79,6 +79,23 @@ async def list_models(base_url: str, timeout: float = 10) -> list[str]:
         return sorted(m["name"] for m in r.json().get("models", []))
 
 
+_thinks: dict[tuple[str, str], bool] = {}  # (Ollama URL, model) -> whether the model has a thinking pass
+
+
+async def _can_think(settings: dict) -> bool:
+    """Whether the model has a thinking pass that Ollama's ``think`` flag controls (asked once per model)."""
+    key = (settings["ollama_url"].rstrip("/"), settings["ollama_model"])
+    if key not in _thinks:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.post(f"{key[0]}/api/show", json={"model": key[1]})
+            r.raise_for_status()
+            _thinks[key] = "thinking" in (r.json().get("capabilities") or [])
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return False  # unknown for now (Ollama down, model missing): leave the flag out, ask next time
+    return _thinks[key]
+
+
 async def _chat(settings: dict, messages: list[dict], fmt) -> str:
     payload = {
         "model": settings["ollama_model"],
@@ -87,6 +104,9 @@ async def _chat(settings: dict, messages: list[dict], fmt) -> str:
         "format": fmt,
         "options": {"temperature": float(settings.get("ollama_temperature", 0.7))},
     }
+    if await _can_think(settings):
+        # Thinking models reason at length before answering: one problem took ~50 s instead of ~3 s.
+        payload["think"] = bool(settings.get("ai_think", False))
     url = f"{settings['ollama_url'].rstrip('/')}/api/chat"
     try:
         async with httpx.AsyncClient(timeout=float(settings.get("ollama_timeout", 180))) as client:

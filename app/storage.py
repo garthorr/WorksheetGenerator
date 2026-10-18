@@ -22,6 +22,7 @@ DEFAULT_SETTINGS = {
     "ollama_temperature": 0.7,
     "ollama_timeout": 240,
     "ai_strict": True,  # drop & retry AI problems that fail the answer check
+    "ai_think": False,  # let thinking models (qwen3, ...) reason first: much slower, sometimes more accurate
     # Worksheet defaults
     "default_title": "Practice Worksheet",
     "header_line": "",  # e.g. teacher / class name

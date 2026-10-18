@@ -116,6 +116,7 @@ def test_numbers_in_survives_huge_exponents():
 
 def test_ollama_failures_become_ai_errors(monkeypatch):
     real_client = httpx.AsyncClient
+    monkeypatch.setattr(ai, "_thinks", {})
     settings = {"ollama_url": "http://ollama:11434", "ollama_model": "m"}
     formats = []
 
@@ -126,6 +127,8 @@ def test_ollama_failures_become_ai_errors(monkeypatch):
         return httpx.Response(200, json={"nope": 1})
 
     def old_ollama(request):  # rejects the JSON-schema format; the plain-JSON retry can't connect
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"capabilities": ["completion"]})
         formats.append(json.loads(request.content)["format"])
         if len(formats) == 1:
             return httpx.Response(400, text="invalid format")
@@ -138,3 +141,26 @@ def test_ollama_failures_become_ai_errors(monkeypatch):
         with pytest.raises(ai.AIError, match=message):
             asyncio.run(ai._request(settings, subject="math", topic="t", difficulty=2, count=1, extra=""))
     assert formats[1] == "json"
+
+
+def test_think_flag_only_for_thinking_models(monkeypatch):
+    """Thinking models get think=false unless the Setup page allows thinking; others never get the flag."""
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(ai, "_thinks", {})
+    sent, shown = [], []
+
+    def ollama(request):
+        if request.url.path == "/api/show":
+            model = json.loads(request.content)["model"]
+            shown.append(model)
+            return httpx.Response(200, json={"capabilities": ["completion"] + ["thinking"] * (model == "qwen3")})
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": "{}"}})
+
+    monkeypatch.setattr(ai.httpx, "AsyncClient",
+                        lambda **kw: real_client(transport=httpx.MockTransport(ollama), **kw))
+    for model, think in (("qwen3", False), ("qwen3", True), ("mistral", False)):
+        settings = {"ollama_url": "http://ollama:11434", "ollama_model": model, "ai_think": think}
+        asyncio.run(ai._chat(settings, [], "json"))
+    assert [p.get("think", "absent") for p in sent] == [False, True, "absent"]
+    assert shown == ["qwen3", "mistral"]  # capabilities are asked once per model

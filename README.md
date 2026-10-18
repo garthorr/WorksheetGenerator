@@ -117,6 +117,10 @@ Model choice matters for AI sections. Math-strong models such as `qwen2.5:14b`
 pass the check far more often than small general models, and fewer retries
 also means faster generation.
 
+Thinking models (qwen3 and others Ollama lists as `thinking`) skip their reasoning
+pass unless **Let thinking models reason** is ticked on the Setup page. With
+`qwen3:4b`, one problem took about 50 s with thinking and 3 s without.
+
 ### Security
 
 - Set `APP_PASSWORD`, even on a tailnet: any web page you visit can send requests to

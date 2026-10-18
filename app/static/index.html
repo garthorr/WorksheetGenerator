@@ -115,6 +115,7 @@
       <label>Temperature <input name="ollama_temperature" type="number" step="0.1" min="0" max="2"></label>
       <label>Timeout (seconds) <input name="ollama_timeout" type="number" min="10" max="1800"></label>
       <label class="check"><input type="checkbox" name="ai_strict"> Strict: discard and retry AI problems whose answers fail the formula check</label>
+      <label class="check"><input type="checkbox" name="ai_think"> Let thinking models (e.g. qwen3) reason before answering: often far slower, sometimes more accurate</label>
     </div>
     <div id="ollama-status" class="status"></div>
 
