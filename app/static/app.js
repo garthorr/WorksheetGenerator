@@ -127,7 +127,15 @@ function setStatus(msg, kind = "", spinner = false) {
   s.replaceChildren(...(spinner ? [el("span", { class: "spinner" })] : []), msg || "");
 }
 
+// The draft (figures included) can run to megabytes, so write it at most every 400 ms while typing.
+let draftTimer = 0;
 function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(writeDraft, 400);
+}
+
+function writeDraft() {
+  clearTimeout(draftTimer);
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(state.sheet)); } catch { /* storage unavailable */ }
 }
 
@@ -418,32 +426,36 @@ function validateConfigs(indices) {
 async function generateSections(indices, seed = null) {
   const err = validateConfigs(indices);
   if (err) { setStatus(err, "error"); return; }
-  const usesAI = indices.some((i) => state.sheet.sections[i].config.source === "ai");
+  // Hold on to the sheet and section objects, not their positions: sections can be moved or
+  // removed (or another worksheet opened) while an AI request takes a minute.
+  const sheet = state.sheet;
+  const targets = indices.map((i) => sheet.sections[i]);
+  const whole = indices.length === sheet.sections.length;
+  const usesAI = targets.some((s) => s.config.source === "ai");
   const btn = $("#generate");
   btn.disabled = true;
   setStatus(usesAI ? "Generating… AI sections can take a minute or two." : "Generating…", "", true);
   try {
     // Questions in the other sections, so the new ones don't repeat them.
-    const avoid = state.sheet.sections.filter((_, i) => !indices.includes(i))
+    const avoid = sheet.sections.filter((s) => !targets.includes(s))
       .flatMap((s) => s.problems.map((p) => p.key || p.question));
     const res = await api("/api/generate", {
       method: "POST",
-      body: { seed, avoid, sections: indices.map((i) => state.sheet.sections[i].config) },
+      body: { seed, avoid, sections: targets.map((s) => s.config) },
     });
     res.sections.forEach((out, k) => {
-      const sec = state.sheet.sections[indices[k]];
-      sec.error = out.error;
-      if (!out.error) sec.problems = out.problems;
+      targets[k].error = out.error;
+      if (!out.error) targets[k].problems = out.problems;
     });
-    if (indices.length === state.sheet.sections.length) {
-      state.sheet.seed = res.seed;
-      $("#ws-seed").value = res.seed;
+    if (whole) {
+      sheet.seed = res.seed;
+      if (state.sheet === sheet) $("#ws-seed").value = res.seed;
     }
     const errors = res.sections.filter((s) => s.error).length;
     const flagged = res.sections.flatMap((s) => s.problems).filter((p) => p.verified === false).length;
     if (errors) setStatus(`${errors} section(s) failed — see the section card for details.`, "error");
     else if (flagged) setStatus(`Done. ${flagged} AI answer(s) failed the formula check — marked ⚠ for review.`, "error");
-    else setStatus(`Done${indices.length === state.sheet.sections.length ? ` · seed ${res.seed}` : ""}.`, "ok");
+    else setStatus(`Done${whole ? ` · seed ${res.seed}` : ""}.`, "ok");
   } catch (e) {
     setStatus(`Generation failed: ${e.message}`, "error");
   } finally {
@@ -456,10 +468,14 @@ async function generateSections(indices, seed = null) {
 
 async function regenerateProblem(si, pi) {
   const sec = state.sheet.sections[si];
+  const old = sec.problems[pi];
   setStatus("Regenerating problem…", "", true);
   try {
     const avoid = state.sheet.sections.flatMap((s) => s.problems.map((p) => p.key || p.question));
-    sec.problems[pi] = await api("/api/problem", { method: "POST", body: { ...sec.config, avoid } });
+    const fresh = await api("/api/problem", { method: "POST", body: { ...sec.config, avoid } });
+    // Find the problem again: problems may have been deleted or the section regenerated meanwhile.
+    const j = sec.problems.indexOf(old);
+    if (j >= 0) sec.problems[j] = fresh;
     setStatus("");
     saveDraft();
     renderPreview();
@@ -492,7 +508,7 @@ function renderPreview() {
   const sheet = $("#paper-sheet"), key = $("#paper-key");
   for (const p of [sheet, key]) {
     p.className = `paper ${p === key ? "key" : ""} ${s.paper === "a4" ? "a4" : ""} ${Number(s.columns) === 2 && p === sheet ? "cols-2" : ""}`;
-    p.replaceChildren(...sheetHeader(p === key));
+    p.replaceChildren(el("div", { class: "ws-head" }, ...sheetHeader(p === key)));
   }
   if (!sh.sections.length) {
     sheet.append(el("p", { class: "empty" }, "Add topics from the catalog, then click Generate."));
@@ -535,6 +551,13 @@ function renderPreview() {
   });
   document.getElementById("page-style").textContent =
     `@page { size: ${s.paper === "a4" ? "A4" : "letter"}; margin: 0.6in 0.65in; }`;
+}
+
+/** Just the title block: typing in Title / Instructions shouldn't re-render every problem's math. */
+function renderHeaders() {
+  for (const p of [$("#paper-sheet"), $("#paper-key")]) {
+    p.querySelector(".ws-head").replaceChildren(...sheetHeader(p.id === "paper-key"));
+  }
 }
 
 function choiceList(choices) {
@@ -728,8 +751,9 @@ async function boot() {
     $("#custom-topic-input").value = "";
   };
   $("#custom-topic-input").onkeydown = (e) => { if (e.key === "Enter") $("#add-custom").click(); };
-  $("#ws-title").oninput = (e) => { state.sheet.title = e.target.value; saveDraft(); renderPreview(); };
-  $("#ws-instructions").oninput = (e) => { state.sheet.instructions = e.target.value; saveDraft(); renderPreview(); };
+  $("#ws-title").oninput = (e) => { state.sheet.title = e.target.value; saveDraft(); renderHeaders(); };
+  $("#ws-instructions").oninput = (e) => { state.sheet.instructions = e.target.value; saveDraft(); renderHeaders(); };
+  window.addEventListener("pagehide", writeDraft);  // don't lose the last 400 ms of edits
   $("#seed-random").onclick = () => ($("#ws-seed").value = Math.floor(Math.random() * 999999) + 1);
   $("#generate").onclick = () => {
     if (!state.sheet.sections.length) { setStatus("Add at least one topic first.", "error"); return; }

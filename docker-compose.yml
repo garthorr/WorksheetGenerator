@@ -24,6 +24,10 @@ services:
       - "traefik.http.routers.worksheets.tls=true"
       - "traefik.http.routers.worksheets.tls.certresolver=${TRAEFIK_CERTRESOLVER:-le}"
       - "traefik.http.services.worksheets.loadbalancer.server.port=8000"
+      # Tailnet only: refuse every client outside Tailscale's address ranges (Traefik v3 syntax;
+      # on v2 the middleware is called ipwhitelist).
+      - "traefik.http.middlewares.worksheets-tailnet.ipallowlist.sourcerange=${WORKSHEETS_ALLOW:-100.64.0.0/10,fd7a:115c:a1e0::/48}"
+      - "traefik.http.routers.worksheets.middlewares=worksheets-tailnet"
 
 volumes:
   worksheet_data:

@@ -1,5 +1,10 @@
 # Standalone run without Traefik: docker compose -f docker-compose.local.yml up --build
 # then open http://localhost:8080
+#
+# The port is bound to loopback only, so nothing on your LAN (or the internet, on a VPS) can reach
+# it; Docker's port rules bypass host firewalls like ufw. To share it over your tailnet with HTTPS:
+#   tailscale serve --bg 8080
+# and set ALLOWED_HOSTS in .env to the machine's tailnet name (e.g. box.your-tailnet.ts.net).
 services:
   worksheets:
     build: .
@@ -8,7 +13,7 @@ services:
       - path: .env
         required: false
     ports:
-      - "8080:8000"
+      - "127.0.0.1:8080:8000"
     volumes:
       - worksheet_data:/data
     extra_hosts:

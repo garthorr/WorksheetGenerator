@@ -67,7 +67,9 @@ USER_PROMPT = """Write {count} {level} {subject} problem(s) on: {topic}.
 
 
 class AIError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status  # Ollama's HTTP status, when it answered with an error
 
 
 async def list_models(base_url: str, timeout: float = 10) -> list[str]:
@@ -86,11 +88,17 @@ async def _chat(settings: dict, messages: list[dict], fmt) -> str:
         "options": {"temperature": float(settings.get("ollama_temperature", 0.7))},
     }
     url = f"{settings['ollama_url'].rstrip('/')}/api/chat"
-    async with httpx.AsyncClient(timeout=float(settings.get("ollama_timeout", 180))) as client:
-        r = await client.post(url, json=payload)
-        if r.status_code >= 400:
-            raise AIError(f"Ollama returned {r.status_code}: {r.text[:300]}")
+    try:
+        async with httpx.AsyncClient(timeout=float(settings.get("ollama_timeout", 180))) as client:
+            r = await client.post(url, json=payload)
+    except httpx.HTTPError as e:
+        raise AIError(f"Could not reach Ollama at {settings['ollama_url']}: {e}") from e
+    if r.status_code >= 400:
+        raise AIError(f"Ollama returned {r.status_code}: {r.text[:300]}", status=r.status_code)
+    try:
         return r.json()["message"]["content"]
+    except (ValueError, KeyError, TypeError) as e:
+        raise AIError(f"Ollama returned an unexpected response: {r.text[:300]}") from e
 
 
 def _parse(raw: str) -> list[dict]:
@@ -194,8 +202,9 @@ def _numbers_in(text: str) -> list[float]:
     t = text.replace(",", "").replace("{,}", "").replace("−", "-")
     t = re.sub(r"\\[dt]?frac\{(%s)\}\{(%s)\}" % (_NUM, _NUM),
                lambda m: repr(float(m[1]) / float(m[2])) if float(m[2]) else m[0], t)
-    t = re.sub(r"(%s)\s*(?:\\times|\\cdot|×|x)\s*10\^\{?(-?\d+)\}?" % _NUM,
-               lambda m: repr(float(m[1]) * 10 ** int(m[2])), t)
+    # Float arithmetic only: 10 ** int(...) on a model-written exponent can overflow or hang.
+    t = re.sub(r"(%s)\s*(?:\\times|\\cdot|×|x)\s*10\^\{?(-?\d{1,3})(?!\d)\}?" % _NUM,
+               lambda m: repr(float(m[1]) * float(f"1e{m[2]}")), t)
     return [float(n) for n in re.findall(_NUM, t)]
 
 
@@ -225,7 +234,11 @@ def _verify(item: dict, constants: dict[str, float] | None = None) -> tuple[str,
         return "error", f"Could not evaluate check formula ({e}); the problem may be missing a given value."
     if not math.isclose(computed, stated, rel_tol=0.02, abs_tol=1e-9):
         return "fail", f"Mismatch: stated {stated:.4g}, but {formula} = {computed:.4g}. Review this answer."
-    if not _text_matches(str(item.get("answer", "")), computed):
+    try:
+        text_ok = _text_matches(str(item.get("answer", "")), computed)
+    except Exception:  # noqa: BLE001  (model-written text; never let it sink the request)
+        text_ok = False
+    if not text_ok:
         return "fail", f"Answer text doesn't match the check value {formula} = {computed:.4g}. Review this answer."
     return "pass", f"Formula check passed ({formula} = {computed:.4g})."
 
@@ -245,11 +258,9 @@ async def _request(settings: dict, *, subject: str, topic: str, difficulty: int,
         raw = await _chat(settings, messages, PROBLEM_SCHEMA)
     except AIError as e:
         # Older Ollama versions only understand format="json".
-        if "format" not in str(e).lower() and "schema" not in str(e).lower():
+        if e.status is None or ("format" not in str(e).lower() and "schema" not in str(e).lower()):
             raise
         raw = await _chat(settings, messages, "json")
-    except httpx.HTTPError as e:
-        raise AIError(f"Could not reach Ollama at {settings['ollama_url']}: {e}") from e
     try:
         return [i for i in _parse(raw) if isinstance(i, dict) and i.get("question")]
     except (json.JSONDecodeError, AIError) as e:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import time
 import uuid
 from pathlib import Path
@@ -12,6 +13,7 @@ from pathlib import Path
 DATA_DIR = Path(os.environ.get("DATA_DIR", "./data"))
 SHEETS = DATA_DIR / "worksheets"
 SETTINGS_FILE = DATA_DIR / "settings.json"
+SECRET_FILE = DATA_DIR / "session_secret"
 
 DEFAULT_SETTINGS = {
     # Ollama
@@ -66,16 +68,51 @@ def save_settings(new: dict) -> dict:
     return s
 
 
+def session_secret() -> bytes:
+    """Random key for signing login cookies, made on first run and kept in DATA_DIR."""
+    _ensure()
+    if SECRET_FILE.exists():
+        return SECRET_FILE.read_bytes()
+    key = secrets.token_hex(32).encode()
+    fd = os.open(SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(key)
+    return key
+
+
+# Library summaries by file path, reused while the file's mtime and size are unchanged.
+_summaries: dict[str, tuple[tuple[int, int], dict | None]] = {}
+
+
+def _summary(f: Path) -> dict | None:
+    st = f.stat()
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _summaries.get(str(f))
+    if cached and cached[0] == stamp:
+        return cached[1]
+    try:
+        d = json.loads(f.read_text())
+        summary = {"id": d["id"], "title": str(d.get("title", "")), "updated": float(d.get("updated", 0)),
+                   "problems": sum(len(s.get("problems", [])) for s in d.get("sections", []))}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        summary = None  # malformed file: leave it out of the list rather than break the whole list
+    _summaries[str(f)] = (stamp, summary)
+    return summary
+
+
 def list_sheets() -> list[dict]:
     _ensure()
     out = []
-    for f in SHEETS.glob("*.json"):
+    files = list(SHEETS.glob("*.json"))
+    for f in files:
         try:
-            d = json.loads(f.read_text())
-        except json.JSONDecodeError:
+            summary = _summary(f)
+        except OSError:  # deleted since the glob
             continue
-        out.append({"id": d["id"], "title": d.get("title", ""), "updated": d.get("updated", 0),
-                    "problems": sum(len(s.get("problems", [])) for s in d.get("sections", []))})
+        if summary:
+            out.append(summary)
+    for name in _summaries.keys() - {str(f) for f in files}:
+        _summaries.pop(name, None)  # another request may have pruned it already
     return sorted(out, key=lambda d: d["updated"], reverse=True)
 
 

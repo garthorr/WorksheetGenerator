@@ -5,6 +5,8 @@ import pytest
 import asyncio
 import json
 
+import httpx
+
 from app import ai
 from app.ai import _fix_latex, _numbers_in, _parse, _verify
 from app.generators import TOPICS, generate
@@ -102,3 +104,37 @@ def test_ai_generation_end_to_end(monkeypatch):
     assert len(probs) == 1 and probs[0].verified is True and "\\mathrm{N}" in probs[0].answer
     system = sent["messages"][0]["content"]
     assert "physics teacher" in system and "\\mathrm{m/s^2}" in system and '{"problems"' in system
+
+
+def test_numbers_in_survives_huge_exponents():
+    """Model-written exponents once overflowed (10^{400}) or hung the server (10^{99999999999})."""
+    assert _numbers_in(r"$3 \times 10^{400}\,\mathrm{J}$") == []
+    assert 2 in _numbers_in(r"$2 \times 10^{99999999999}$")
+    item = {"given": {}, "answer_formula": "3*10**40", "answer_value": 3e40, "answer": r"$3 \times 10^{400}$"}
+    assert _verify(item)[0] == "fail"
+
+
+def test_ollama_failures_become_ai_errors(monkeypatch):
+    real_client = httpx.AsyncClient
+    settings = {"ollama_url": "http://ollama:11434", "ollama_model": "m"}
+    formats = []
+
+    def unreachable(request):
+        raise httpx.ConnectError("refused")
+
+    def odd_reply(request):
+        return httpx.Response(200, json={"nope": 1})
+
+    def old_ollama(request):  # rejects the JSON-schema format; the plain-JSON retry can't connect
+        formats.append(json.loads(request.content)["format"])
+        if len(formats) == 1:
+            return httpx.Response(400, text="invalid format")
+        raise httpx.ConnectError("refused")
+
+    for handler, message in ((unreachable, "Could not reach"), (odd_reply, "unexpected response"),
+                             (old_ollama, "Could not reach")):
+        monkeypatch.setattr(ai.httpx, "AsyncClient",
+                            lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
+        with pytest.raises(ai.AIError, match=message):
+            asyncio.run(ai._request(settings, subject="math", topic="t", difficulty=2, count=1, extra=""))
+    assert formats[1] == "json"

@@ -22,8 +22,15 @@
     <h1><span class="logo">∑</span> Worksheet Generator</h1>
     <input type="password" name="password" placeholder="Password" autofocus required autocomplete="current-password">
     <button type="submit">Sign in</button>
-    <p class="err" id="err" hidden>Wrong password.</p>
+    <p class="err" id="err" hidden></p>
   </form>
-  <script>if (location.search.includes("error")) document.getElementById("err").hidden = false;</script>
+  <script>
+    const error = new URLSearchParams(location.search).get("error");
+    if (error) {
+      const p = document.getElementById("err");
+      p.textContent = error === "wait" ? "Too many attempts. Wait a few minutes, then try again." : "Wrong password.";
+      p.hidden = false;
+    }
+  </script>
 </body>
 </html>

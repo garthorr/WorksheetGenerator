@@ -93,14 +93,20 @@ docker compose up -d --build
 - Joins the external `traefik` network with router `worksheets` on entrypoint `websecure`.
 - `TRAEFIK_CERTRESOLVER` must match your Traefik config. Your other stacks use
   both `le` and `letsencrypt`, depending on the host.
-- Add a DNS record for `worksheets.tastymath.com` pointing at the Traefik host.
+- **Tailnet only:** the router lets in Tailscale addresses only (`100.64.0.0/10`,
+  `fd7a:115c:a1e0::/48`; change with `WORKSHEETS_ALLOW`). Point the DNS record for
+  `worksheets.tastymath.com` at the Traefik host's **Tailscale** IP, so tailnet clients
+  arrive over Tailscale. Let's Encrypt's HTTP challenge can't reach a tailnet address, so
+  use a DNS-challenge resolver. The labels use Traefik v3's `ipallowlist`; on v2 it's `ipwhitelist`.
 - Data (settings + saved worksheets) lives in the `worksheet_data` volume.
 
 ### Ollama
 
 The container reaches the host's Ollama at `http://host.docker.internal:11434`
-(mapped via `extra_hosts`). Ollama has to listen on more than loopback:
-`OLLAMA_HOST=0.0.0.0`. The URL and model can be changed any time on the
+(mapped via `extra_hosts`). On Linux, Ollama has to listen on more than loopback for
+that, e.g. `OLLAMA_HOST=0.0.0.0`. Ollama has no password, so then block port 11434
+from everything but Docker in your firewall, or bind it to the Docker bridge address
+instead (`OLLAMA_HOST=172.17.0.1`). The URL and model can be changed any time on the
 **Setup** page, which also lists the models you have pulled.
 
 Model choice matters for AI sections. Math-strong models such as `qwen2.5:14b`
@@ -109,8 +115,17 @@ also means faster generation.
 
 ### Security
 
-The site is public and AI sections spend your Ollama compute, so set
-`APP_PASSWORD`. With no password the app runs open and logs a warning.
+- Set `APP_PASSWORD`, even on a tailnet: any web page you visit can send requests to
+  tailnet hosts through your browser, and AI sections spend your Ollama compute. With no
+  password the app runs open and logs a warning.
+- Set `ALLOWED_HOSTS` to the names you reach the app by (e.g. `box.your-tailnet.ts.net`).
+  Requests for any other host name get a 400, which stops DNS-rebinding pages.
+- The app refuses API calls (and any form posts) that the browser marks as coming from
+  another site (`Sec-Fetch-Site`), limits each client to 10 failed logins per 5 minutes, and
+  refuses request bodies over 10 MB.
+- Login cookies are signed with `SESSION_SECRET`, or with a random key made on first run
+  and kept in the data volume (`session_secret`).
+- KaTeX is served from `app/static/katex`, so the page loads nothing from other sites.
 
 ## Local development
 
@@ -122,7 +137,9 @@ DATA_DIR=./data OLLAMA_BASE_URL=http://localhost:11434 .venv/bin/uvicorn app.mai
 ```
 
 Or run in Docker without Traefik: `docker compose -f docker-compose.local.yml up --build`
-and open http://localhost:8080.
+and open http://localhost:8080. The port is bound to loopback only; to share it on your
+tailnet with HTTPS, run `tailscale serve --bg 8080` and add the machine's tailnet name to
+`ALLOWED_HOSTS`.
 
 ## Adding a topic
 

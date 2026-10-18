@@ -8,6 +8,7 @@ import hmac
 import logging
 import os
 import random
+import re
 import secrets
 import time
 from pathlib import Path
@@ -16,7 +17,7 @@ from typing import Literal
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import storage
 from .ai import AIError, generate_ai, list_models
@@ -27,21 +28,40 @@ log = logging.getLogger("worksheets")
 STATIC = Path(__file__).parent / "static"
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
-SESSION_SECRET = (os.environ.get("SESSION_SECRET") or hashlib.sha256(
-    f"worksheets:{APP_PASSWORD}".encode()).hexdigest()).encode()
+# Host names the app answers to (e.g. your tailnet name), comma-separated; empty = any. Refusing
+# other names stops a DNS-rebinding web page from reaching the app through your browser.
+ALLOWED_HOSTS = {h.strip().lower() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()}
+if ALLOWED_HOSTS:
+    ALLOWED_HOSTS |= {"localhost", "127.0.0.1", "[::1]"}  # the container healthcheck
 SESSION_DAYS = 30
 COOKIE = "ws_session"
+MAX_BODY = 10_000_000  # bytes; the largest worksheet the generator can build is about 7 MB
+# Per client: failed logins allowed per window (seconds), and the pause after each failure.
+LOGIN_MAX_FAILS, LOGIN_WINDOW, FAIL_DELAY = 10, 300, 1.5
 
 app = FastAPI(title="Worksheet Generator", docs_url=None, redoc_url=None)
 
 if not APP_PASSWORD:
     log.warning("APP_PASSWORD is not set — the app (and your Ollama instance) is open to anyone who can reach it.")
+if not ALLOWED_HOSTS:
+    log.warning("ALLOWED_HOSTS is not set — the app answers to any host name.")
 
 
 # ------------------------------------------------------------------ auth
 
+def _session_key() -> bytes:
+    """Cookie signing key: SESSION_SECRET (else a random one kept in DATA_DIR) mixed with the password,
+    so changing the password logs everyone out. Never the password alone: anyone holding a cookie
+    could then test password guesses offline."""
+    secret = os.environ.get("SESSION_SECRET", "").encode() or storage.session_secret()
+    return hashlib.sha256(secret + b"\0" + APP_PASSWORD.encode()).digest()
+
+
+SESSION_KEY = _session_key() if APP_PASSWORD else b""
+
+
 def _sign(exp: int) -> str:
-    mac = hmac.new(SESSION_SECRET, str(exp).encode(), hashlib.sha256).hexdigest()
+    mac = hmac.new(SESSION_KEY, str(exp).encode(), hashlib.sha256).hexdigest()
     return f"{exp}.{mac}"
 
 
@@ -52,25 +72,51 @@ def _valid(token: str | None) -> bool:
     return exp.isdigit() and int(exp) > time.time() and hmac.compare_digest(token, _sign(int(exp)))
 
 
-@app.middleware("http")
-async def require_login(request: Request, call_next):
-    path = request.url.path
-    if not APP_PASSWORD or path in ("/login", "/healthz") or path.startswith("/static/login"):
-        return await call_next(request)
-    if _valid(request.cookies.get(COOKIE)):
-        return await call_next(request)
-    if path.startswith("/api/"):
-        return JSONResponse({"detail": "Not logged in"}, status_code=401)
-    return RedirectResponse("/login")
+PUBLIC_PATHS = {"/login", "/healthz"}
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 @app.middleware("http")
-async def revalidate_static(request: Request, call_next):
-    """Make browsers revalidate the GUI files (cheap via ETag) so redeploys show up immediately."""
+async def guard(request: Request, call_next):
+    # Decide on the path the router will serve. request.url is rebuilt from the Host header, so a
+    # crafted Host could make it say /login while the router serves /api/... (CVE-2026-48710).
+    path = request.scope["path"]
+    api = path.startswith("/api/")
+    host = re.sub(r":\d+$", "", request.headers.get("host", "")).lower()
+    if ALLOWED_HOSTS and host not in ALLOWED_HOSTS:
+        return JSONResponse({"detail": "Unknown host"}, status_code=400)
+    # Browsers label requests that another site's page makes; refuse those (CSRF), password or not.
+    if (api or request.method not in SAFE_METHODS) and \
+            request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+        return JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
+    if APP_PASSWORD and path not in PUBLIC_PATHS and not _valid(request.cookies.get(COOKIE)):
+        if api:
+            return JSONResponse({"detail": "Not logged in"}, status_code=401)
+        return RedirectResponse("/login")
     resp = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/static/"):
-        resp.headers["Cache-Control"] = "no-cache"
+    if path == "/" or path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"  # revalidate (cheap via ETag) so redeploys show up at once
     return resp
+
+
+class LimitBody:
+    """Refuse request bodies over MAX_BODY before anything reads them (uvicorn sets no limit)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = dict(scope["headers"])
+            length = headers.get(b"content-length")
+            if length is None and b"transfer-encoding" in headers:
+                return await JSONResponse({"detail": "Content-Length required"}, status_code=411)(scope, receive, send)
+            if length is not None and (not length.isdigit() or int(length) > MAX_BODY):
+                return await JSONResponse({"detail": "Request too large"}, status_code=413)(scope, receive, send)
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(LimitBody)  # added last, so it runs before the guard
 
 
 @app.get("/login")
@@ -78,15 +124,29 @@ def login_page():
     return FileResponse(STATIC / "login.html")
 
 
+_login_fails: dict[str, list[float]] = {}  # client address -> times of recent failed logins
+
+
 @app.post("/login")
 async def login(request: Request, password: str = Form(...)):
-    if not APP_PASSWORD or secrets.compare_digest(password.encode(), APP_PASSWORD.encode()):
+    if not APP_PASSWORD:
+        return RedirectResponse("/", status_code=303)
+    now = time.time()
+    for c in [c for c, times in _login_fails.items() if now - times[-1] >= LOGIN_WINDOW]:
+        del _login_fails[c]
+    client = request.client.host if request.client else "?"
+    fails = [t for t in _login_fails.get(client, []) if now - t < LOGIN_WINDOW]
+    if len(fails) >= LOGIN_MAX_FAILS:  # parallel guesses all land here: no await since the check
+        return RedirectResponse("/login?error=wait", status_code=303)
+    if secrets.compare_digest(password.encode(), APP_PASSWORD.encode()):
+        _login_fails.pop(client, None)
         resp = RedirectResponse("/", status_code=303)
         exp = int(time.time()) + SESSION_DAYS * 86400
         resp.set_cookie(COOKIE, _sign(exp), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax",
                         secure=request.url.scheme == "https")
         return resp
-    await asyncio.sleep(1.5)  # slow down guessing
+    _login_fails[client] = [*fails, now]
+    await asyncio.sleep(FAIL_DELAY)  # slow down guessing
     return RedirectResponse("/login?error=1", status_code=303)
 
 
@@ -190,7 +250,9 @@ async def _make(sec: Section, rng: random.Random, settings: dict, count: int, se
         if sec.topic not in TOPICS:
             raise HTTPException(400, f"Unknown topic {sec.topic!r} (custom topics need the AI source)")
         try:
-            probs = generate_set(sec.topic, sec.difficulty, count, rng, skills=sec.skills, seen=seen, mc=mc, **opts)
+            # CPU-bound (sympy): a thread keeps the server answering other requests meanwhile.
+            probs = await asyncio.to_thread(generate_set, sec.topic, sec.difficulty, count, rng,
+                                            skills=sec.skills, seen=seen, mc=mc, **opts)
         except KeyError as e:
             raise HTTPException(400, str(e).strip("'\"")) from e
         return [p.to_dict() for p in probs]
@@ -237,6 +299,9 @@ async def api_generate(req: GenerateRequest):
             entry["error"] = str(e)
         except HTTPException as e:
             entry["error"] = e.detail
+        except Exception:  # noqa: BLE001  (one failing section shouldn't sink the rest)
+            log.exception("Generating section %d (%s) failed", i + 1, sec.topic)
+            entry["error"] = "Something went wrong generating this section (details are in the server log)."
         out.append(entry)
     return {"seed": seed, "sections": out}
 
@@ -320,14 +385,26 @@ def worksheet(sid: str):
     return sheet
 
 
+class SavedSection(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    config: dict
+    problems: list[dict] = []
+    error: str = ""
+
+
+class Worksheet(BaseModel):
+    """A worksheet as the GUI saves it; fields not listed here are kept as they are."""
+    model_config = ConfigDict(extra="allow")
+    id: str | None = None
+    title: str = ""
+    instructions: str = ""
+    seed: int | None = None
+    sections: list[SavedSection]
+
+
 @app.post("/api/worksheets")
-async def save_worksheet(request: Request):
-    body = await request.json()
-    if not isinstance(body, dict) or not isinstance(body.get("sections"), list):
-        raise HTTPException(400, "Invalid worksheet")
-    if len(await request.body()) > 2_000_000:
-        raise HTTPException(413, "Worksheet too large")
-    return storage.save_sheet(body)
+def save_worksheet(sheet: Worksheet):
+    return storage.save_sheet(sheet.model_dump())
 
 
 @app.delete("/api/worksheets/{sid}")
