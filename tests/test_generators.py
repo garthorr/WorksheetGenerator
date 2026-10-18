@@ -2,6 +2,10 @@ import random
 
 import pytest
 
+import asyncio
+import json
+
+from app import ai
 from app.ai import _fix_latex, _numbers_in, _parse, _verify
 from app.generators import TOPICS, generate
 from app.safe_eval import safe_eval
@@ -77,3 +81,24 @@ def test_verify_uses_section_constants():
     item = {"given": {"m": 2}, "answer_formula": "m*g", "answer_value": 20, "answer": "20 N"}
     assert _verify(item)[0] == "error"
     assert _verify(item, {"g": 10})[0] == "pass"
+
+
+def test_ai_generation_end_to_end(monkeypatch):
+    """The whole AI path, prompts included, against a stand-in for Ollama (a brace in the
+    prompt once broke str.format and every AI request with it)."""
+    sent = {}
+
+    async def fake_chat(settings, messages, fmt):
+        sent["messages"] = messages
+        return json.dumps({"problems": [{
+            "question": "A $2\\,\\mathrm{kg}$ cart accelerates at $3\\,\\mathrm{m/s^2}$. Find the net force.",
+            "answer": "$F = 6\\,\\mathrm{N}$", "solution": "$F = ma = (2)(3) = 6\\,\\mathrm{N}$",
+            "given": {"m": 2, "a": 3}, "answer_formula": "m * a", "answer_value": 6}]})
+
+    monkeypatch.setattr(ai, "_chat", fake_chat)
+    settings = {"ollama_url": "http://ollama:11434", "ollama_model": "test", "ai_strict": True}
+    probs = asyncio.run(ai.generate_ai(settings, subject="physics", topic="Newton's laws", difficulty=2,
+                                       count=1, extra="Use g = 9.8 m/s^2."))
+    assert len(probs) == 1 and probs[0].verified is True and "\\mathrm{N}" in probs[0].answer
+    system = sent["messages"][0]["content"]
+    assert "physics teacher" in system and "\\mathrm{m/s^2}" in system and '{"problems"' in system

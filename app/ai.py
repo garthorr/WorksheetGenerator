@@ -48,7 +48,7 @@ Return ONLY JSON matching: {{"problems": [{{"question", "answer", "solution", "g
 
 Rules:
 - Write math in LaTeX inside $...$ (inline) or $$...$$ (display) in EVERY field, including "answer" and
-  "solution" (e.g. "$a = 7.1\\,\\mathrm{m/s^2}$"). Never use a bare $ for money; write "dollars".
+  "solution" (e.g. "$a = 7.1\\,\\mathrm{{m/s^2}}$"). Never use a bare $ for money; write "dollars".
 - In JSON strings, backslashes must be escaped (write \\\\frac, \\\\times).
 - "answer": the final answer with units, concise.
 - "solution": 1-3 short worked steps.
