@@ -5,6 +5,9 @@ services:
     container_name: worksheet-generator
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Answer only to the Traefik host name unless .env lists others.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-${WORKSHEETS_HOST:-worksheet.home.tastymath.com}}
     volumes:
       - worksheet_data:/data
     networks:
@@ -19,7 +22,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
-      - "traefik.http.routers.worksheets.rule=Host(`${WORKSHEETS_HOST:-worksheets.tastymath.com}`)"
+      - "traefik.http.routers.worksheets.rule=Host(`${WORKSHEETS_HOST:-worksheet.home.tastymath.com}`)"
       - "traefik.http.routers.worksheets.entrypoints=websecure"
       - "traefik.http.routers.worksheets.tls=true"
       - "traefik.http.routers.worksheets.tls.certresolver=${TRAEFIK_CERTRESOLVER:-le}"

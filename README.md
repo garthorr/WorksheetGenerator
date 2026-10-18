@@ -1,7 +1,7 @@
 # Worksheet Generator
 
 A dockerized web app for building math and physics worksheets with answer keys.
-Served at **https://worksheets.tastymath.com** through Traefik.
+Served at **https://worksheet.home.tastymath.com** through the home Traefik, over Tailscale only.
 
 - **Pick topics by course:** Algebra 1, Geometry, Algebra 2, Precalculus, Conceptual
   Physics and AP Physics 1, with units in teaching order (calculus sits under
@@ -93,11 +93,15 @@ docker compose up -d --build
 - Joins the external `traefik` network with router `worksheets` on entrypoint `websecure`.
 - `TRAEFIK_CERTRESOLVER` must match your Traefik config. Your other stacks use
   both `le` and `letsencrypt`, depending on the host.
-- **Tailnet only:** the router lets in Tailscale addresses only (`100.64.0.0/10`,
-  `fd7a:115c:a1e0::/48`; change with `WORKSHEETS_ALLOW`). Point the DNS record for
-  `worksheets.tastymath.com` at the Traefik host's **Tailscale** IP, so tailnet clients
-  arrive over Tailscale. Let's Encrypt's HTTP challenge can't reach a tailnet address, so
-  use a DNS-challenge resolver. The labels use Traefik v3's `ipallowlist`; on v2 it's `ipwhitelist`.
+- **Tailnet only:** add an A record for `worksheet.home.tastymath.com` pointing at the
+  home Traefik's **Tailscale** IP, the same address `ganttist.home.tastymath.com` uses. That
+  Traefik already gets Let's Encrypt certificates for names on its Tailscale IP.
+- The router also lets in Tailscale addresses only (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`;
+  change with `WORKSHEETS_ALLOW`), in case the host is reachable some other way. If every
+  request gets a 403 from Traefik, Traefik isn't seeing your tailnet address as the client
+  (e.g. Docker Desktop rewrites it), so widen `WORKSHEETS_ALLOW`. The labels use Traefik v3's
+  `ipallowlist`; on v2 it's `ipwhitelist`.
+- The app answers only to `WORKSHEETS_HOST` (set `ALLOWED_HOSTS` to add more names).
 - Data (settings + saved worksheets) lives in the `worksheet_data` volume.
 
 ### Ollama
@@ -118,8 +122,9 @@ also means faster generation.
 - Set `APP_PASSWORD`, even on a tailnet: any web page you visit can send requests to
   tailnet hosts through your browser, and AI sections spend your Ollama compute. With no
   password the app runs open and logs a warning.
-- Set `ALLOWED_HOSTS` to the names you reach the app by (e.g. `box.your-tailnet.ts.net`).
-  Requests for any other host name get a 400, which stops DNS-rebinding pages.
+- `ALLOWED_HOSTS` lists the names you reach the app by. Requests for any other host name
+  get a 400, which stops DNS-rebinding pages. The Traefik deploy sets it to
+  `WORKSHEETS_HOST`; for the local compose, set it yourself (e.g. `box.your-tailnet.ts.net`).
 - The app refuses API calls (and any form posts) that the browser marks as coming from
   another site (`Sec-Fetch-Site`), limits each client to 10 failed logins per 5 minutes, and
   refuses request bodies over 10 MB.
