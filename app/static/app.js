@@ -91,6 +91,22 @@ function figureImg(svg) {
   return el("img", { class: "figure", alt: "Figure for this problem", src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` });
 }
 
+/** Stop a line break from separating inline math from the punctuation after it ("v" / "."). */
+function keepPunctuationWithMath(root) {
+  for (const katexEl of root.querySelectorAll(".katex:not(.katex-display .katex)")) {
+    // auto-render wraps each formula in its own <span>; the punctuation sits next to that wrapper
+    const parent = katexEl.parentElement;
+    const k = parent !== root && parent.tagName === "SPAN" && parent.childNodes.length === 1 ? parent : katexEl;
+    const next = k.nextSibling;
+    const m = next?.nodeType === Node.TEXT_NODE && next.textContent.match(/^[.,;:?!)]+/);
+    if (!m) continue;
+    next.textContent = next.textContent.slice(m[0].length);
+    const wrap = el("span", { class: "nobr" });
+    k.replaceWith(wrap);
+    wrap.append(k, m[0]);
+  }
+}
+
 /** Render text with $..$ / $$..$$ math. Text is inserted as text, never HTML. */
 function mathText(tag, text, cls) {
   const e = el(tag, { class: cls }, tidyMath(text || ""));
@@ -99,6 +115,7 @@ function mathText(tag, text, cls) {
       delimiters: [{ left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false }],
       throwOnError: false,
     });
+    keepPunctuationWithMath(e);
   }
   return e;
 }

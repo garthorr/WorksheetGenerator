@@ -41,7 +41,7 @@ COURSE_UNITS = {
                    "Light & optics"],
     # College Board AP Physics 1 unit order (circular motion and gravitation are part of Unit 2)
     "ap1": ["Kinematics", "Forces & dynamics", "Circular motion & gravitation", "Work, energy & power",
-            "Momentum", "Fluids"],
+            "Momentum", "Fluids", "Derivations"],
 }
 
 PLACE_NAMES = {0: "whole number", 1: "tenth", 2: "hundredth", 3: "thousandth"}
@@ -212,9 +212,31 @@ def variants_for(topic_id: str, difficulty: int, skills: list[str] | None = None
     return out
 
 
+def steps(*lines: str) -> str:
+    """A worked solution, one step per line (empty steps are skipped)."""
+    return "\n".join(line for line in lines if line)
+
+
+_GIVEN = re.compile(r"\$(-?\d+(?:\.\d+)?)(\\,\\mathrm\{)")
+
+
+def two_sig_givens(question: str) -> str:
+    """Show measured values with at least two significant figures, as AP problems do:
+    3 kg -> 3.0 kg, 0.5 m -> 0.50 m. Whole numbers of 10 or more are left alone."""
+    def fix(m: re.Match) -> str:
+        text = m[1]
+        digits = text.lstrip("-").replace(".", "").lstrip("0")
+        if len(digits) >= 2 or (("." not in text) and abs(float(text)) >= 10) or float(text) == 0:
+            return m[0]
+        return f"${float(text):#.2g}".rstrip(".") + m[2]
+    return _GIVEN.sub(fix, question)
+
+
 def _run(v: Variant, topic_id: str, ctx: Ctx) -> Problem:
     p = v.fn(ctx)
     p.topic, p.skill = topic_id, v.skill
+    if TOPICS[topic_id].subject == "physics" and not ctx.nice:
+        p.question = two_sig_givens(p.question)
     p.facts.setdefault("variant", v.fn.__name__)
     p.facts.setdefault("g", ctx.g)
     p.facts.setdefault("form", ctx.form)

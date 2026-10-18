@@ -14,9 +14,20 @@ Served at **https://worksheets.tastymath.com** through Traefik.
   decimals, or both, rounded to the nearest whole number, tenth, hundredth or
   thousandth. The question tells students which form to use. Physics answers use
   significant figures.
-- **Every problem has an answer.** Built-in topics compute the answer in code
-  (sympy for algebra and calculus), so those answers are always correct. AI answers
-  are checked automatically (see below).
+- **Every problem has an answer and worked steps.** Built-in topics compute the answer in
+  code (sympy for algebra and calculus), so those answers are always correct. The answer key
+  shows the work the way these courses expect:
+  - physics: knowns → equation → substitution → result;
+  - algebra: each operation (distributing, collecting terms, elimination for systems);
+  - factoring: the factor pair and the zero product property;
+  - quadratic formula: the discriminant, then the radical simplified.
+
+  AI answers are checked automatically (see below).
+- **Word problems and derivations:** Algebra 1 equation word problems (consecutive
+  integers, perimeter, tickets and coins, distance-rate-time, mixtures, catch-up) and AP
+  Physics 1 symbolic derivations ("derive an expression for v in terms of g and h").
+  Physics problems also rotate the unknown: solve v = v₀ + at for v one time, a or t the
+  next. Measured values are shown with at least two significant figures (3.0 kg).
 - **GUI:** build a worksheet from sections (topic × count × difficulty), preview
   it on a live paper page, regenerate, edit or delete single problems, and
   print or save as PDF with a separate answer key page. Saved worksheets go to the
@@ -136,6 +147,10 @@ and `ctx.exact_or_decimal()`, and plain decimals should use `ctx.round_note()` a
   proportions, wave speeds and densities match real materials, and currents stay in range.
 - **Varied:** 30-problem sections never repeat, sections cover every problem type,
   and answers rarely repeat.
+- **Worked steps reach the answer:** every number in an answer appears in its steps, and
+  physics steps use every given. Derivation answers are checked by solving the listed
+  physics relations with sympy at random values for every symbol, and word-problem
+  solutions must satisfy their equations.
 - **Every answer form and skill works:** math answers are checked in exact, decimal and
   combined forms at several rounding places, every skill generates on its own, and
   every topic belongs to a course.

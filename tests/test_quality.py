@@ -163,6 +163,11 @@ def check_math(p) -> str:
             for n, d in re.findall(r"\\frac\{(\d+)\}\{(\d+)\}", a):
                 assert math.gcd(int(n), int(d)) == 1, a
         return "arith"
+    if "word" in f:  # word problems: the solution satisfies every equation and is in the answer
+        eqs, sol = f["word"]["eqs"], f["word"]["sol"]
+        assert all(sp.simplify(e.lhs.subs(sol) - e.rhs.subs(sol)) == 0 for e in eqs), (q, eqs, sol)
+        assert all(shown(float(v), a, rel=1e-9) for v in sol.values()) or p.skill == "perimeter_problems"
+        return "word problem"
     if p.topic == "order_ops":
         expr = q.strip("$").replace(r"\times", "*").replace(r"\div", "/").replace("^", "**")
         expr = expr.replace(r"\left[", "(").replace(r"\right]", ")")
@@ -387,6 +392,16 @@ def _laws():
     # Each check uses a different relation than the generator did, where one exists.
     L = LAWS
     L["_kin_final_v"] = lambda G, A, g: c((A["v"] - G["v0"]) / G["t"], G["a"])
+    L["_kin_find_a"] = lambda G, A, g: c(G["v0"] + A["a"] * G["t"], G["v"])
+    L["_kin_find_t"] = lambda G, A, g: c(G["v0"] + G["a"] * A["t"], G["v"])
+    L["_energy_ke_speed"] = lambda G, A, g: c(G["m"] * A["v"] ** 2 / 2, G["KE"])
+    L["_energy_pe_height"] = lambda G, A, g: c(G["m"] * g * A["h"], G["PE"])
+    L["_mom_p_speed"] = lambda G, A, g: c(G["m"] * A["v"], G["p"])
+    L["_circ_speed"] = lambda G, A, g: c(A["v"] ** 2 / G["r"], G["ac"])
+    L["_wave_length"] = lambda G, A, g: c(G["f"] * A["lam"], G["v"])
+    L["_wave_freq"] = lambda G, A, g: c(A["f"] * G["lam"], G["v"])
+    L["_heat_temp"] = lambda G, A, g: c(G["m"] * G["c"] * A["dT"], G["Q"])
+    L["_density_mass"] = lambda G, A, g: c(A["m"] / G["V"], G["rho"])
 
     def integrate(pts, absolute=False, n=20000):  # brute-force area under a piecewise-linear graph
         t0, t1 = pts[0][0], pts[-1][0]
@@ -528,6 +543,9 @@ def realistic(p) -> list[str]:
 @pytest.mark.parametrize("g,nice", [(9.8, False), (10, True)], ids=["g9.8", "g10-whole"])
 def test_physics(topic, level, g, nice):
     for p in problems(topic, level, g=g, nice=nice):
+        if p.facts.get("symbolic"):
+            check_symbolic(p)
+            continue
         G, A, var = p.facts["given"], p.facts["ans"], p.facts["variant"]
         assert var in LAWS, f"{var} has no physics check in tests/test_quality.py"
         drawn = {k: p.facts[k] for k in ("graph", "forces") if k in p.facts}  # values shown only in the figure
@@ -542,6 +560,23 @@ def test_physics(topic, level, g, nice):
             assert shown(val, p.answer), f"answer {k}={val:.4g} not shown: {p.answer}"
             assert val != 0 or var == "_mom_inelastic", f"trivial answer {k} = 0"
         assert not realistic(p), f"{realistic(p)}: {p.question}"
+
+
+def check_symbolic(p):
+    """Solve the item's physics relations at random positive values and compare with the answer key."""
+    f = p.facts
+    unknowns = [f["unknown"], *f["solve_for"]]
+    known = sorted({s for law in f["laws"] for s in law.free_symbols} - set(unknowns), key=str)
+    for trial in range(2):
+        rng = random.Random(f"{p.question}{trial}")
+        vals = {s: rng.uniform(0.2, 1.2) if str(s) == "theta" else rng.uniform(1, 5) for s in known}
+        if sp.Symbol("M") in vals and sp.Symbol("m") in vals:
+            vals[sp.Symbol("M")] = vals[sp.Symbol("m")] + 1 + vals[sp.Symbol("M")]  # the whole outweighs a piece
+        sols = sp.solve([law.subs(vals) for law in f["laws"]], unknowns, dict=True)
+        expected = complex(f["answer"].subs(vals).evalf())
+        assert any(abs(complex(sol[f["unknown"]].evalf()) - expected) < 1e-6 * max(1, abs(expected)) for sol in sols), \
+            f"derivation answer doesn't follow from its laws: {p.question} {f['answer']} {sols}"
+    assert sp.latex(f["unknown"]) in p.answer
 
 
 @pytest.mark.parametrize("topic", sorted({t for t, _ in PHYSICS}))

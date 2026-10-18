@@ -183,6 +183,7 @@ nav { display: flex; gap: 4px; }
 .paper .problem .q .katex-display { margin: .4em 0; text-align: left; }
 .paper .problem .q .katex-display > .katex { text-align: left; }
 .paper .work { grid-column: 2; }
+.paper .nobr { white-space: nowrap; }
 .paper .problem .figure { display: block; margin: 8px 0 2px; max-width: min(100%, 300px); height: auto; }
 .paper.cols-2 .problem .figure { max-width: 100%; }
 .paper .work.small { height: .7in; } .paper .work.medium { height: 1.4in; } .paper .work.large { height: 2.4in; }
