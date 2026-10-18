@@ -32,16 +32,18 @@ COURSES = {
 COURSE_UNITS = {
     "alg1": ["Foundations", "Equations", "Lines & coordinate geometry", "Systems of equations", "Exponents",
              "Quadratics", "Statistics"],
-    "geo": ["Lines & coordinate geometry", "Right triangles", "Area & perimeter"],
+    "geo": ["Lines & coordinate geometry", "Transformations", "Angles & triangles", "Similarity", "Right triangles",
+            "Triangle trigonometry", "Area & perimeter", "Circles", "Volume & surface area"],
     "alg2": ["Systems of equations", "Quadratics", "Exponents", "Exponentials & logarithms"],
-    "precalc": ["Exponentials & logarithms", "Right triangles", "Limits"],
+    "precalc": ["Exponentials & logarithms", "Right triangles", "Triangle trigonometry", "Limits"],
     "calc": ["Limits", "Calculus"],
     "conceptual": ["Kinematics", "Forces & dynamics", "Momentum", "Work, energy & power",
-                   "Circular motion & gravitation", "Fluids", "Heat", "Waves & sound", "Electricity",
-                   "Light & optics"],
+                   "Torque & rotational dynamics", "Circular motion & gravitation", "Fluids", "Heat", "Oscillations",
+                   "Waves & sound", "Electricity", "Light & optics"],
     # College Board AP Physics 1 unit order (circular motion and gravitation are part of Unit 2)
     "ap1": ["Kinematics", "Forces & dynamics", "Circular motion & gravitation", "Work, energy & power",
-            "Momentum", "Fluids", "Derivations"],
+            "Momentum", "Torque & rotational dynamics", "Rotational energy & momentum", "Oscillations", "Fluids",
+            "Derivations"],
 }
 
 PLACE_NAMES = {0: "whole number", 1: "tenth", 2: "hundredth", 3: "thousandth"}

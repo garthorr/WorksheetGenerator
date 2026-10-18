@@ -312,8 +312,9 @@ class Graph:
                          if xmin - 1e-9 <= x <= xmax + 1e-9 and ymin - 1e-9 <= y <= ymax + 1e-9})
         return self.polyline([inside[0], inside[-1]], width=1.8)
 
-    def point(self, p: Pt, label: str = "") -> Graph:
-        self.items.append(("point", p, label))
+    def point(self, p: Pt, label: str = "", *, away: Pt | None = None) -> Graph:
+        """A dot with an optional label, placed up-right or, given ``away``, on the side away from that point."""
+        self.items.append(("point", p, label, away))
         return self
 
     def svg(self) -> str:
@@ -366,8 +367,17 @@ class Graph:
                 X, Y = self.px(it[1])
                 out.append(f'<circle cx="{X:.1f}" cy="{Y:.1f}" r="3.2" fill="{INK}"/>')
                 if it[2]:
-                    out.append(f'<text x="{X + 6:.1f}" y="{Y - 6:.1f}" font-size="12" fill="{INK}" stroke="#fff" '
-                               f'stroke-width="3" paint-order="stroke">{escape(it[2])}</text>')
+                    tx, ty, anchor = X + 6, Y - 6, "start"
+                    if it[3] is not None:
+                        AX, AY = self.px(it[3])
+                        nx, ny = X - AX, Y - AY
+                        n = math.hypot(nx, ny) or 1
+                        nx, ny = nx / n, ny / n
+                        tx, ty = X + 9 * nx, Y + 9 * ny + 4
+                        anchor = "start" if nx > 0.35 else "end" if nx < -0.35 else "middle"
+                        ty += 4 * ny
+                    out.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="{anchor}" font-size="12" fill="{INK}" '
+                               f'stroke="#fff" stroke-width="3" paint-order="stroke">{escape(it[2])}</text>')
         left, top = 34, 22
         right, bottom = (12 + 7 * len(self.xlabel)) if self.xlabel else 10, 22
         w, h = self.W + left + right, self.H + top + bottom

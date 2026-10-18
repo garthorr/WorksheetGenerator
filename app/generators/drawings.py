@@ -24,11 +24,11 @@ def right_triangle(a: float, b: float, *, label_a: str = "", label_b: str = "", 
     f.right_angle(C, B, A)
     centre = (a / 3, b / 3)
     if label_a:
-        f.seg_label(C, B, label_a, away=centre, italic=label_a in ("x", "?"))
+        f.seg_label(C, B, label_a, away=centre, italic=label_a in ("x", "y", "?"))
     if label_b:
-        f.seg_label(C, A, label_b, away=centre, italic=label_b in ("x", "?"))
+        f.seg_label(C, A, label_b, away=centre, italic=label_b in ("x", "y", "?"))
     if label_c:
-        f.seg_label(A, B, label_c, away=centre, italic=label_c in ("x", "?"))
+        f.seg_label(A, B, label_c, away=centre, italic=label_c in ("x", "y", "?"))
     if angle_at == "base":
         f.angle(B, C, A, angle_label, italic=angle_label == "θ")
     return f.svg()
@@ -158,7 +158,7 @@ def parallel_lines(theta: float, labels: dict[int, str]) -> str:
         ray_line = {0: (-1, 0), 1: (1, 0), 2: (1, 0), 3: (-1, 0)}[quadrant]
         ray_tr = {0: d, 1: d, 2: (-d[0], -d[1]), 3: (-d[0], -d[1])}[quadrant]
         f.angle(v, (v[0] + ray_line[0], v[1]), (v[0] + ray_tr[0] * 0.5, v[1] + ray_tr[1] * 0.5), label,
-                r_px=16, italic=not label[:1].isdigit())
+                r_px=16, italic=label in ("x", "y", "θ"))
     return f.svg()
 
 
@@ -174,14 +174,14 @@ def circle_angles(central: float, *, inscribed: bool = True, labels: dict[str, s
     f.line(O, A).line(O, B)
     f.text(A, "A", dx=-6, dy=10, anchor="end").text(B, "B", dx=6, dy=10, anchor="start")
     f.text(O, "O", dx=-8, dy=4, anchor="end")
-    f.angle(O, A, B, labels.get("central", ""), r_px=18, italic=False)
+    f.angle(O, A, B, labels.get("central", ""), r_px=18, italic=labels.get("central") == "x")
     if inscribed:
         f.line(P, A).line(P, B).dot(P)
         f.text(P, "P", dy=-8)
-        f.angle(P, A, B, labels.get("inscribed", ""), r_px=26, italic=False)
+        f.angle(P, A, B, labels.get("inscribed", ""), r_px=26, italic=labels.get("inscribed") == "x")
     if "arc" in labels:
         mid = (math.cos(math.radians(-90)), math.sin(math.radians(-90)))
-        f.text(mid, labels["arc"], dy=16)
+        f.text(mid, labels["arc"], dy=16, italic=labels["arc"] == "x")
     return f.svg()
 
 
@@ -500,3 +500,224 @@ def motion_graph(points: list[tuple[float, float]], ylabel: str, *, ystep: float
               xlabel="t (s)", ylabel=ylabel, label_every=every)
     g.polyline(points)
     return g.svg()
+
+
+# ======================================================================== Phase 5: geometry
+
+
+def _tri_points(angA: float, angB: float, base: float = 1.0):
+    """Triangle with base AB horizontal (A at the origin) and angles A and B in degrees."""
+    a, b = math.radians(angA), math.radians(angB)
+    # apex C from the two base angles: intersection of rays from A and B
+    tc = base * math.sin(b) / math.sin(a + b)  # length AC
+    return (0.0, 0.0), (base, 0.0), (tc * math.cos(a), tc * math.sin(a))
+
+
+def _longest_side_down(pts):
+    """Rotate (and if needed mirror) a triangle so its longest side is horizontal with the third vertex above."""
+    i = max(range(3), key=lambda k: math.dist(pts[k], pts[(k + 1) % 3]))
+    p, q = pts[i], pts[(i + 1) % 3]
+    t = -math.atan2(q[1] - p[1], q[0] - p[0])
+    rot = [((x - p[0]) * math.cos(t) - (y - p[1]) * math.sin(t), (x - p[0]) * math.sin(t) + (y - p[1]) * math.cos(t))
+           for x, y in pts]
+    if sum(y for _, y in rot) < 0:
+        rot = [(x, -y) for x, y in rot]
+    return rot
+
+
+def _unit_vec(x: float, y: float) -> tuple[float, float]:
+    n = math.hypot(x, y) or 1.0
+    return x / n, y / n
+
+
+def triangle(angA: float, angB: float, *, angle_labels: dict | None = None, side_labels: dict | None = None,
+             vertex_names: str = "", base: float = 1.0, exterior_at_B: str = "") -> str:
+    """A triangle drawn to the given angles. Sides are named by the opposite vertex: a = BC, b = AC, c = AB.
+    ``exterior_at_B`` labels an exterior angle formed by extending AB past B (AB is then drawn as the base);
+    otherwise the longest side is drawn as the base, so tall, thin triangles don't crowd their labels."""
+    A, B, C = _tri_points(angA, angB, base)
+    if not exterior_at_B:
+        A, B, C = _longest_side_down([A, B, C])
+    angle_labels, side_labels = angle_labels or {}, side_labels or {}
+    f = Fig(size=220, max_height=150)
+    f.poly([A, B, C])
+    centre = ((A[0] + B[0] + C[0]) / 3, (A[1] + B[1] + C[1]) / 3)
+    for side, (p, q) in {"a": (B, C), "b": (A, C), "c": (A, B)}.items():
+        if side_labels.get(side):
+            f.seg_label(p, q, side_labels[side], away=centre, italic=side_labels[side] in ("x", "?"))
+    corners = {"A": (A, B, C), "B": (B, C, A), "C": (C, A, B)}
+    for name, (v, p, q) in corners.items():
+        if angle_labels.get(name):
+            label = angle_labels[name]
+            f.angle(v, p, q, label, r_px=18, italic=label in ("x", "θ"))
+    if vertex_names:
+        sizes = dict(zip("ABC", (angA, angB, 180 - angA - angB)))
+        for (n, (v, p, q)), name in zip(corners.items(), vertex_names):
+            up, uq = _unit_vec(p[0] - v[0], p[1] - v[1]), _unit_vec(q[0] - v[0], q[1] - v[1])
+            ox, oy = _unit_vec(-(up[0] + uq[0]), -(up[1] + uq[1]))  # outward along the bisector
+            if angle_labels.get(n) and sizes[n] < 40:  # that spot holds the angle's label (see Fig.angle)
+                ox, oy = min(((-oy, ox), (oy, -ox)), key=lambda d: d[1])  # step aside, preferring below
+            f.text(v, name, dx=11 * ox, dy=-11 * oy + 4, size=12, color=GRAY,
+                   anchor="start" if ox > 0.5 else "end" if ox < -0.5 else "middle")
+    if exterior_at_B:
+        D = (B[0] + base * 0.45, 0.0)
+        f.line(B, D, dash=True, color=GRAY)
+        f.angle(B, D, C, exterior_at_B, r_px=16, italic=exterior_at_B in ("x", "θ"))
+    return f.svg()
+
+
+def similar_triangles(c: float, b: float, angA: float, k: float, labels1: dict, labels2: dict,
+                      names: tuple[str, str] = ("ABC", "DEF")) -> str:
+    """Two similar triangles side by side, drawn from sides c = AB and b = AC with angle A between them;
+    the second is scaled by k."""
+    f = Fig(size=260, max_height=130)
+    t = math.radians(angA)
+    pts1 = [(0.0, 0.0), (1.0, 0.0), (b / c * math.cos(t), b / c * math.sin(t))]
+    gap = max(p[0] for p in pts1) + 0.5 - k * min(p[0] for p in pts1)
+    pts2 = [(gap + p[0] * k, p[1] * k) for p in pts1]
+    for pts, labels, nm in ((pts1, labels1, names[0]), (pts2, labels2, names[1])):
+        A, B, C = pts
+        f.poly([A, B, C])
+        centre = ((A[0] + B[0] + C[0]) / 3, (A[1] + B[1] + C[1]) / 3)
+        for side, (p, q) in {"a": (B, C), "b": (A, C), "c": (A, B)}.items():
+            if labels.get(side):
+                f.seg_label(p, q, labels[side], away=centre, italic=labels[side] == "x")
+        for v, name, (dx, dy) in zip((A, B, C), nm, ((-7, 12), (7, 12), (0, -7))):
+            f.text(v, name, dx=dx, dy=dy, size=11, color=GRAY)
+    return f.svg()
+
+
+def side_splitter(labels: dict) -> str:
+    """Triangle ABC with DE parallel to the base AB (D on CA, E on CB). Labels: CD, DA, CE, EB."""
+    A, B, C = (0.0, 0.0), (1.2, 0.0), (0.45, 1.0)
+    t = 0.45
+    D = (C[0] + (A[0] - C[0]) * t, C[1] + (A[1] - C[1]) * t)
+    E = (C[0] + (B[0] - C[0]) * t, C[1] + (B[1] - C[1]) * t)
+    f = Fig(size=220, max_height=170)
+    f.poly([A, B, C]).line(D, E)
+    centre = (0.55, 0.35)
+    for key, (p, q) in {"CD": (C, D), "DA": (D, A), "CE": (C, E), "EB": (E, B)}.items():
+        if labels.get(key):
+            f.seg_label(p, q, labels[key], away=centre, italic=labels[key] == "x")
+    for v, name, (dx, dy) in ((A, "A", (-8, 12)), (B, "B", (8, 12)), (C, "C", (0, -8)), (D, "D", (-9, 2)), (E, "E", (9, 2))):
+        f.text(v, name, dx=dx, dy=dy, size=11, color=GRAY)
+    return f.svg()
+
+
+def chords(labels: dict) -> str:
+    """Circle with chords AB and CD crossing at E. Labels: AE, EB, CE, ED."""
+    pts = {n: (math.cos(math.radians(a)), math.sin(math.radians(a))) for n, a in
+           (("A", 160), ("B", -25), ("C", 70), ("D", 230))}
+    A, B, C, D = pts["A"], pts["B"], pts["C"], pts["D"]
+    # intersection of AB and CD
+    (x1, y1), (x2, y2), (x3, y3), (x4, y4) = A, B, C, D
+    den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / den
+    py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / den
+    E = (px, py)
+    f = Fig(size=170, max_height=170)
+    f.circle((0, 0), 1).line(A, B).line(C, D).dot(E)
+    for key, (p, q), away in (("AE", (A, E), C), ("EB", (E, B), D), ("CE", (C, E), B), ("ED", (E, D), A)):
+        if labels.get(key):
+            f.seg_label(p, q, labels[key], away=away, italic=labels[key] == "x", gap=7)
+    for name, p in pts.items():
+        f.text(p, name, dx=10 * p[0], dy=10 * -p[1] + 4, size=11, color=GRAY)
+    f.text(E, "E", dx=8, dy=14, size=11, color=GRAY)
+    return f.svg()
+
+
+def sector(theta: float, r_label: str, theta_label: str) -> str:
+    """Circle with a shaded sector of central angle theta."""
+    f = Fig(size=150, max_height=150)
+    f.circle((0, 0), 1)
+    pts = [(0.0, 0.0)] + [(math.cos(math.radians(a)), math.sin(math.radians(a))) for a in
+                          [i * theta / 24 for i in range(25)]]
+    f.poly(pts, fill="#e3edf9")
+    f.dot((0, 0))
+    f.seg_label((0, 0), (1, 0), r_label, away=(0, 1))
+    # mark the angle (the long way round when it's reflex) and label it inside the sector, where it's wide enough
+    f.arc((0, 0), 0.16, 0, theta)
+    mid = math.radians(theta / 2)
+    reach = 0.62 if theta < 90 else 0.4
+    f.text((reach * math.cos(mid), reach * math.sin(mid)), theta_label, dy=4)
+    return f.svg()
+
+
+def plane_polygon(points: list[tuple[int, int]], names: str = "ABC", span: int = 8) -> str:
+    """Coordinate plane with a polygon and its labeled vertices."""
+    reach = max(abs(v) for p in points for v in p) + 1
+    span = min(span, max(4, reach + reach % 2))  # zoom in on small figures; even, for labels every 2
+    g = Graph(-span, span, -span, span, width=200, height=200, label_every=2 if span > 5 else 1, plane=True)
+    g.polyline(points + [points[0]], width=1.8)
+    centre = (sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points))
+    for p, name in zip(points, names):
+        g.point(p, name, away=centre)
+    return g.svg()
+
+
+def regular_polygon(n: int) -> str:
+    f = Fig(size=140, max_height=140)
+    pts = [(math.cos(2 * math.pi * i / n + math.pi / 2), math.sin(2 * math.pi * i / n + math.pi / 2)) for i in range(n)]
+    f.poly(pts)
+    return f.svg()
+
+
+# ======================================================================== Phase 5: AP Physics 1
+
+
+def beam(length: float, pivots: list[float], loads: list[tuple[float, str, str]], *, dims: list[tuple[float, float, str]]
+         | None = None) -> str:
+    """A horizontal beam (0..length) on triangular supports at ``pivots``, with loads (position, mass label,
+    and an optional arrow label) and dimension lines (from, to, label) underneath."""
+    f = Fig(size=240, max_height=120)
+    th = length * 0.03
+    f.poly([(0, 0), (length, 0), (length, th), (0, th)], fill="#ddd")
+    for p in pivots:
+        f.poly([(p, 0), (p - length * 0.035, -length * 0.07), (p + length * 0.035, -length * 0.07)], fill="#bbb")
+    for x, label, _ in loads:
+        s = length * 0.08
+        f.poly([(x - s / 2, th), (x + s / 2, th), (x + s / 2, th + s), (x - s / 2, th + s)], fill="#f2f2f2")
+        f.text((x, th + s), label, dy=-5, size=11)
+    for i, (a, b, label) in enumerate(dims or []):
+        y = -length * (0.13 + 0.07 * i)
+        f.line((a, y), (b, y), width=0.9)
+        for e in (a, b):
+            f.line((e, y - length * 0.015), (e, y + length * 0.015), width=0.9)
+        f.text(((a + b) / 2, y), label, dy=13, size=11, italic=label == "x")
+    return f.svg()
+
+
+def pulley_mass(label_pulley: str, label_mass: str) -> str:
+    """A disk pulley on a fixed axle with a string wrapped around it holding a hanging mass."""
+    f = Fig(size=130, max_height=170)
+    f.line((-0.9, 2.3), (0.9, 2.3)).hatch((-0.9, 2.3), (0.9, 2.3), below=False)
+    f.line((0, 2.3), (0, 1.6))
+    f.circle((0, 1.2), 0.45, fill="#eee").dot((0, 1.2))
+    f.text((0, 1.2), label_pulley, dx=-34, dy=4, anchor="end", size=11)
+    f.line((0.45, 1.2), (0.45, 0.35))
+    f.poly([(0.2, 0.35), (0.7, 0.35), (0.7, -0.1), (0.2, -0.1)], fill="#f2f2f2")
+    f.text((0.45, 0.12), label_mass, dy=4, size=11)
+    return f.svg()
+
+
+def spring_block(label_k: str, label_m: str) -> str:
+    f = Fig(size=220, max_height=80)
+    f.line((0, 0), (0, 0.9)).hatch((0, 0), (0, 0.9), below=False)
+    f.line((0, 0), (3.2, 0)).hatch((0, 0), (3.2, 0))
+    coil = [(0.0, 0.4)] + [(0.2 + 0.15 * i, 0.4 + (0.15 if i % 2 else -0.15)) for i in range(11)] + [(1.95, 0.4)]
+    f.poly(coil, closed=False)
+    f.poly([(1.95, 0), (2.75, 0), (2.75, 0.8), (1.95, 0.8)], fill="#f2f2f2")
+    f.text((2.35, 0.4), label_m, dy=4, size=11)
+    f.text((1.0, 0.6), label_k, dy=-4, size=11)
+    return f.svg()
+
+
+def pendulum(label_L: str, angle: float = 20) -> str:
+    t = math.radians(angle)
+    f = Fig(size=140, max_height=160)
+    f.line((-0.5, 0), (0.5, 0)).hatch((-0.5, 0), (0.5, 0), below=False)
+    f.line((0, 0), (0, -2.0), dash=True, color=GRAY, width=1)
+    bob = (2.0 * math.sin(t), -2.0 * math.cos(t))
+    f.line((0, 0), bob).circle(bob, 0.12, fill="#ddd")
+    f.seg_label((0, 0), bob, label_L, away=(-1, -1))
+    return f.svg()

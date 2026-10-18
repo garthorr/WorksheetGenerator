@@ -7,6 +7,15 @@ Served at **https://worksheets.tastymath.com** through Traefik.
   Physics and AP Physics 1, with units in teaching order (calculus sits under
   "Beyond Precalculus"). You can also type any **custom topic** and have your Ollama
   model write the problems.
+- **Geometry:** angle relationships (parallel lines and transversals, triangle sums,
+  exterior angles, polygons), special right triangles, similar triangles and the
+  side-splitter theorem, distance and midpoint, transformations, circles (inscribed angles,
+  arc length and sector area, intersecting chords, equations of circles), volume and surface
+  area, and the laws of sines and cosines.
+- **AP Physics 1, every unit:** kinematics through fluids, including torque and static
+  equilibrium, rotational kinematics and τ = Iα (pulleys with mass), rotational kinetic
+  energy, angular momentum and rolling, and springs and pendulums. Torque and
+  oscillations are also in Conceptual Physics.
 - **Pick skills:** each topic is made of named skills (e.g. *Factor ax² + bx + c*,
   *Simplest radical form*, *Free fall*) marked E/M/H for difficulty. A section uses
   every skill at its difficulty, or exactly the skills you click.
@@ -35,9 +44,11 @@ Served at **https://worksheets.tastymath.com** through Traefik.
 - **Reproducible:** the same seed and the same built-in sections always give the same worksheet.
 - **No repeats:** a worksheet never contains the same problem twice, sections rotate
   through every problem type in their topic, and answers rarely repeat within a section.
-- **Figures:** problems come with diagrams drawn from their own numbers: right triangles,
-  shapes, 3-D boxes, coordinate graphs, launches, inclines, free-body diagrams, collisions,
-  circuits, lens and refraction diagrams, and motion graphs. Figures label the givens and
+- **Figures:** problems come with diagrams drawn from their own numbers: triangles drawn to
+  their angles, parallel lines and transversals, similar triangles, circles, sectors and
+  chords, solids, shapes on the coordinate plane, launches, inclines, free-body diagrams,
+  collisions, circuits, lens and refraction diagrams, motion graphs, seesaws and beams,
+  pulleys, springs and pendulums. Figures label the givens and
   mark the unknown with x, θ or ?; they never show the answer. Some skills are read off a
   figure (slope from a graph, velocity-time and position-time graphs, free-body diagrams), so
   those keep their figure even when figures are turned off on the Setup page or for a section.
@@ -54,7 +65,7 @@ testing, a 12B model wrote the right formula for a Carnot problem and then state
 
 | Source | Use it for | Answer correctness |
 |---|---|---|
-| **Built-in** (default) | Computational practice in the 30 catalog topics | Computed exactly. Always right |
+| **Built-in** (default) | Computational practice in the 44 catalog topics | Computed exactly. Always right |
 | **AI (Ollama)** | Custom topics, themed word problems, more variety | Checked by formula. Problems that fail are flagged or retried |
 
 The AI must return its given values and an arithmetic formula for the answer.
@@ -109,20 +120,23 @@ and open http://localhost:8080.
 
 ## Adding a topic
 
-Topics live in `app/generators/math_gen.py` and `physics_gen.py`:
+Topics live in `app/generators/`: `math_gen.py` (algebra through calculus), `math_words.py`
+(word problems), `geometry_gen.py`, `physics_gen.py`, `rotation_gen.py` (torque, rotation,
+oscillations) and `derivations.py`:
 
 ```python
-topic("springs", "physics", "Oscillations", "Springs", "Hooke's law and spring energy.",
-      courses=["conceptual", "ap1"])
+topic("magnetism", "physics", "Magnetism", "Magnetic force", "Force on a current-carrying wire.",
+      courses=["conceptual"])
 
-@variant("springs", 1, "Hooke's law")   # level 1 = easy, 2 = medium, 3 = hard; the label is the skill
-def _hooke(ctx: Ctx) -> Problem:
-    k, x = step(ctx.rng, 50, 500, 10), step(ctx.rng, 0.01, 0.3, 0.01)
-    return P(f"A spring with $k = {num(k)}{U('N/m')}$ is stretched ${num(x)}{U('m')}$. Find the force.",
-             f"$F = {ctx.fmt(k * x)}{U('N')}$", "$F = kx$", {"k": k, "x": x}, {"F": k * x})
+@variant("magnetism", 1, "Force on a wire")   # level 1 = easy, 2 = medium, 3 = hard; the label is the skill
+def _wire_force(ctx: Ctx) -> Problem:
+    I, L, B = step(ctx.rng, 1, 10, 0.5), step(ctx.rng, 0.1, 1, 0.1), step(ctx.rng, 0.1, 2, 0.1)
+    return P(f"A ${num(L)}{U('m')}$ wire carries ${num(I)}{U('A')}$ across a ${num(B)}{U('T')}$ magnetic field. "
+             "Find the force on it.", f"$F = {ctx.fmt(I * L * B)}{U('N')}$", "$F = ILB$",
+             {"I": I, "L": L, "B": B}, {"F": I * L * B})
 ```
 
-The topic appears in the catalog automatically. A new unit (here "Oscillations") also
+The topic appears in the catalog automatically. A new unit (here "Magnetism") also
 needs a place in `COURSE_UNITS` in `core.py`, which sets each course's teaching order;
 the tests remind you. Physics variants pass their givens and answers through `P(...)`
 so the tests can check them, and need a physics-law check in `LAWS` in
@@ -139,8 +153,10 @@ and `ctx.exact_or_decimal()`, and plain decimals should use `ctx.round_note()` a
 - **Correct, checked independently.** Math answers are substituted back into the
   displayed equation, or the question text is re-parsed and evaluated. Physics answers
   must satisfy a *different* relation than the generator used: conservation of momentum
-  and energy, Kirchhoff's rules, alternate kinematics equations. Each physics problem type
-  must have a check, so a new type can't skip one.
+  and energy, Kirchhoff's rules, alternate kinematics equations, torques about a different
+  pivot. Geometry answers are checked another way too: transformations as complex-number
+  maps, right angles by dot products, arcs and sectors in radians, triangles by the law of
+  sines. Each problem type must have a check, so a new type can't skip one.
 - **Displayed consistently:** every given value appears in the question and every
   computed answer appears in the answer text.
 - **Realistic:** runners don't go 19 m/s, ladders lean steeply, TV screens have real

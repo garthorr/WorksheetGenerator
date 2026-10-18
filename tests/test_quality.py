@@ -149,9 +149,165 @@ def _answer_value(ans: str) -> Fraction:
     return _parse_number(body)
 
 
+def _ints_shown(vals, text) -> bool:
+    return all(shown(float(v), text, rel=1e-9) for v in vals)
+
+
+def _xform(op, z: complex) -> complex:
+    """Transformations as complex-number maps, independent of the generator's coordinate rules."""
+    name, *args = op
+    return {"reflect_x": lambda: z.conjugate(), "reflect_y": lambda: -z.conjugate(),
+            "reflect_yx": lambda: 1j * z.conjugate(), "reflect_ynx": lambda: -1j * z.conjugate(),
+            "rot90": lambda: 1j * z, "rot180": lambda: -z, "rot270": lambda: -1j * z,
+            "translate": lambda: z + complex(*args) if args else z,
+            "dilate": lambda: z * float(args[0]) if args else z}[name]()
+
+
+def check_geometry(p) -> str:
+    f, q, a = p.facts, p.question, p.answer
+    form, places = f["form"], f["places"]
+    kind = f["kind"]
+    lin = lambda e, v: e[0] * v + e[1]  # noqa: E731
+    if kind == "angle_pair":
+        assert f["a"] + f["x"] == f["total"] and shown(f["x"], a, rel=1e-9)
+    elif kind == "transversal":  # same parity of position = same angle; otherwise a linear pair
+        (kp, known), (up, x0) = f["known"], f["unknown"]
+        assert (known == x0) if (kp - up) % 2 == 0 else (known + x0 == 180)
+        assert {known, x0} <= {f["theta"], 180 - f["theta"]} and shown(x0, a, rel=1e-9)
+    elif kind == "transversal_alg":
+        u, v = lin(f["e1"], f["x"]), lin(f["e2"], f["x"])
+        p1, p2 = f["pos"]
+        assert (u == v) if (p1 - p2) % 2 == 0 else (u + v == 180)
+        assert 0 < u < 180 and 0 < v < 180 and _ints_shown([f["x"], u, v], a)
+    elif kind == "pair_alg":
+        u, v = lin(f["e1"], f["x"]), lin(f["e2"], f["x"])
+        assert (u + v == f["total"]) if f["total"] else (u == v)
+        assert u > 0 and v > 0 and _ints_shown([f["x"], u, v], a)
+    elif kind == "triangle_sum":
+        A, B, C = f["angles"]
+        assert A + B + C == 180 and min(A, B, C) > 0
+        if "x" in f:
+            assert lin(f["e1"], f["x"]) == A and lin(f["e2"], f["x"]) == B
+        assert _ints_shown(f["want"], a)
+    elif kind == "exterior":
+        assert lin(f["e_ext"], f["x"]) == f["ext"] == f["A"] + f["C"] and lin(f["e_A"], f["x"]) == f["A"]
+        assert f["ext"] < 180 and _ints_shown([f["x"], f["ext"]], a)
+    elif kind == "polygon":  # exterior angles of a convex polygon sum to 360°
+        n = f["n"]
+        assert f["each"] * n == f["sum"] and 180 - f["each"] == Fraction(360, n)
+        assert _ints_shown(f["want"], a)
+    elif kind == "special":  # ratios from the unit triangles with angles 45° or 30°
+        sd = f["sides"]
+        if f["type"] == 45:
+            assert close(float(sd["hyp"]), float(sd["leg"]) / math.sin(math.radians(45)))
+        else:
+            assert close(float(sd["short"]) / float(sd["hyp"]), math.sin(math.radians(30)))
+            assert close(float(sd["long"]) / float(sd["hyp"]), math.cos(math.radians(30)))
+        for w in f["wants"]:
+            v = sd[w]
+            if v.is_Integer:
+                assert shown(float(v), a, rel=1e-9), a
+            else:
+                assert (form == "decimal") != (sp.latex(v) in a), a
+                assert (form == "exact") != shown_r(float(v), a, places), a
+    elif kind == "similar":
+        (s1, t1), (s2, t2) = f["pairs"]
+        assert close(t1 / s1, t2 / s2) and t1 != s1 and _ints_shown(f["want"], a)
+    elif kind == "splitter":
+        assert Fraction(f["CD"], f["DA"]) == Fraction(f["CE"], f["EB"]) and _ints_shown(f["want"], a)
+    elif kind == "scale_ratio":  # the shape with side b has the unknown measure
+        assert f["v2"] == f["v1"] * Fraction(f["b"], f["a"]) ** f["power"] and _ints_shown(f["want"], a)
+        assert ("larger" in q) == (f["a"] > f["b"])
+    elif kind == "midpoint":
+        (ax, ay), (bx, by), (mx, my) = f["A"], f["B"], f["M"]
+        assert 2 * mx == ax + bx and 2 * my == ay + by
+        tx, ty = f[f["want"]]
+        assert _ints_shown([tx, ty], a) and a.count("(") == 1
+    elif kind == "distance":
+        (ax, ay), (bx, by) = f["A"], f["B"]
+        d = f["d"]
+        assert close(float(d), math.hypot(bx - ax, by - ay))
+        if d.is_Integer:
+            assert shown(float(d), a, rel=1e-9)
+        else:
+            assert (form == "decimal") != (sp.latex(d) in a) and (form == "exact") != shown_r(float(d), a, places)
+    elif kind == "classify":  # right: some pair of sides is perpendicular (dot product 0)
+        A, B, C = (complex(*pt) for pt in f["pts"])
+        right = any(((u - v).conjugate() * (w - v)).real == 0 for v, u, w in ((A, B, C), (B, C, A), (C, A, B)))
+        lens = {round(abs(B - A) ** 2), round(abs(C - B) ** 2), round(abs(C - A) ** 2)}
+        assert ((A - B).conjugate() * (C - B)).imag != 0  # not collinear
+        assert ("not a right" not in a) == right and a.startswith("Isosceles" if len(lens) < 3 else "Scalene")
+    elif kind == "inscribed":
+        assert 2 * f["inscribed"] == f["central"] < 180 and _ints_shown(f["want"], a)
+    elif kind == "sector":  # radians: s = rθ, A = r²θ/2
+        th = math.radians(f["theta"])
+        v = f["r"] * th if f["what"] == "arc" else f["r"] ** 2 * th / 2
+        assert close(v, f["value"])
+        exact, decimal = any(close(v, pv) for pv in pi_values(a)), shown_r(v, a, places)
+        assert {"exact": exact, "decimal": decimal and "\\pi" not in a, "both": exact and decimal}[form], a
+    elif kind == "chords":
+        assert f["AE"] * f["EB"] == f["CE"] * f["ED"] and _ints_shown([f["ED"]], a)
+    elif kind == "circle_eq":
+        h, k, r = f["h"], f["k"], f["r"]
+        eq = f.get("general")
+        if eq is None:  # the answer equation, parsed back, is satisfied by points r from the center
+            lhs, rhs = a.strip("$").replace("\\left", "").replace("\\right", "").split(" = ")
+            eq = sp.sympify(lhs.replace("^{2}", "**2").replace(" ", "")) - sp.sympify(rhs)
+        for t in (0.3, 1.9, 4.0):
+            assert abs(float(eq.subs({x: h + r * math.cos(t), y: k + r * math.sin(t)}))) < 1e-9
+        assert eq.subs({x: h, y: k}) == -r * r
+        assert f"({h}, {k})" in a or "general" not in f
+        assert f"radius ${r}$" in a or "general" not in f
+    elif kind == "solid":
+        d, shape, what = f["dims"], f["shape"], f["what"]
+        r, h = d.get("r", 0), d.get("h", 0)
+        V = {"prism": lambda: d["l"] * d["w"] * d["h"], "cylinder": lambda: math.pi * r * r * h,
+             "cone": lambda: math.pi * r * r * h / 3, "sphere": lambda: 4 / 3 * math.pi * r**3,
+             "pyramid": lambda: d["s"] ** 2 * d["h"] / 3}
+        SA = {"prism": lambda: 2 * (d["l"] * d["w"] + d["l"] * d["h"] + d["w"] * d["h"]),
+              "cylinder": lambda: 2 * math.pi * r * (r + h), "sphere": lambda: 4 * math.pi * r * r,
+              "cone": lambda: math.pi * r * (r + math.hypot(r, h))}
+        v = (V if what == "V" else SA)[shape]()
+        assert close(v, f["value"])
+        if shape in ("prism", "pyramid"):
+            assert shown(v, a, rel=1e-9)
+        else:
+            exact, decimal = any(close(v, pv) for pv in pi_values(a)), shown_r(v, a, places)
+            assert {"exact": exact, "decimal": decimal and "\\pi" not in a, "both": exact and decimal}[form], a
+    elif kind == "transform":
+        for pre, img in zip(f["pre"], f["img"]):
+            z = complex(*map(float, pre))
+            for op in f["ops"]:
+                z = _xform(op, z)
+            assert close(z.real, float(img[0])) and close(z.imag, float(img[1]))
+        for n, pt in zip("ABC", f["img"]):
+            assert f"{n}'(" in a and _ints_shown(pt, a)
+    elif kind == "oblique":
+        t = f["tri"]
+        A, B, C = (math.radians(t[k]) for k in "ABC")
+        assert close(A + B + C, math.pi) and min(A, B, C) > 0
+        assert close(t["a"] / math.sin(A), t["b"] / math.sin(B)) and close(t["b"] / math.sin(B), t["c"] / math.sin(C))
+        assert close(t["c"] ** 2, t["a"] ** 2 + t["b"] ** 2 - 2 * t["a"] * t["b"] * math.cos(C))
+        name, v = f["want"]
+        if name == "area":  # a different pair of sides than the generator used
+            assert close(v, 0.5 * t["b"] * t["c"] * math.sin(A))
+        else:
+            assert close(v, t[name] if name in "abc" else math.degrees({"A": A, "B": B, "C": C}[name]))
+        assert shown_r(v, a, places), a
+    else:
+        raise AssertionError(f"no geometry check for {kind}")
+    return f"geometry {kind}"
+
+
+GEOMETRY = {"angles", "special_right", "similarity", "coordinate_geo", "circles", "solids", "transformations",
+            "triangle_trig"}
+
+
 def check_math(p) -> str:
     """Independent correctness check. Returns the name of the check that ran."""
     f, q, a = p.facts, p.question, p.answer
+    if p.topic in GEOMETRY:
+        return check_geometry(p)
     if p.topic in ("add_sub", "mul_div", "fractions"):
         tok = r"-?\d+\\tfrac\{\d+\}\{\d+\}|-?\\frac\{\d+\}\{\d+\}|-?\d+"
         m = re.fullmatch(rf"\$\$({tok}) (\+|-|\\times|\\div) ({tok})\$\$", q)
@@ -506,6 +662,35 @@ def _laws():
     L["_pressure_depth"] = lambda G, A, g: c(A["P"] - 101300, G["rho"] * g * G["h"])
     L["_buoyancy"] = lambda G, A, g: c(A["Fb"], 1000 * G["V"] * g) and c(A["Wapp"] + A["Fb"], G["rho"] * G["V"] * g)
 
+    # torque, rotation, rotational energy, oscillations
+    L["_torque_perp"] = lambda G, A, g: c(A["tau"], G["r"] * G["F"])
+    L["_torque_angle"] = lambda G, A, g: c(A["tau"], G["r"] * G["F"] * trig(G)[0])
+    L["_seesaw"] = lambda G, A, g: c(G["m1"] * G["d1"], G["m2"] * A["d2"])
+    L["_beam_supports"] = lambda G, A, g: (  # torques about the other end, and the force balance
+        c(A["FL"] * G["L"], G["M"] * g * G["L"] / 2 + G["m"] * g * (G["L"] - G["x"]))
+        and c(A["FL"] + A["FR"], (G["M"] + G["m"]) * g))
+    L["_ang_velocity"] = lambda G, A, g: (c(A["v"], 2 * math.pi * G["r"] * G["rpm"] / 60)  # circumference per second
+                                          and c(A["omega"] * G["r"], A["v"]))
+    L["_ang_accel"] = lambda G, A, g: c(G["w"] ** 2, G["w0"] ** 2 + 2 * A["alpha"] * A["theta"])
+    L["_torque_alpha"] = lambda G, A, g: (c(G["F"], 0.5 * G["M"] * A["alpha"] * G["R"])  # F = (1/2)M a_rim
+                                          and c(A["w"], A["alpha"] * G["t"]))
+    L["_pulley_mass"] = lambda G, A, g: (c(G["m"] * g - A["T"], G["m"] * A["a"])
+                                         and c(A["T"] * G["R"], 0.5 * G["M"] * G["R"] ** 2 * A["alpha"])
+                                         and c(A["a"], A["alpha"] * G["R"]))
+    L["_rot_ke"] = lambda G, A, g: (c(A["KE"], 0.5 * G["inertia"] * G["M"] * (G["w"] * G["R"]) ** 2)  # rim speed
+                                    and c(A["I_rot"], G["inertia"] * G["M"] * G["R"] ** 2))
+    L["_skater"] = lambda G, A, g: c(G["I2"] * A["w2"] ** 2, G["I1"] ** 2 * G["w1"] ** 2 / G["I2"])  # K = L²/2I
+    L["_platform"] = lambda G, A, g: c((0.5 * G["M"] + G["m"]) * G["R"] ** 2 * A["w"], 0.5 * G["M"] * G["R"] ** 2 * G["w0"])
+    L["_rolling"] = lambda G, A, g: c(g * G["h"], 0.5 * A["v"] ** 2 * (1 + G["inertia"]))
+    L["_rolling_ke"] = lambda G, A, g: (c(A["Kt"], 0.5 * G["m"] * G["v"] ** 2) and c(A["Kr"], G["inertia"] * A["Kt"])
+                                        and c(A["K"], A["Kt"] + A["Kr"]))
+    L["_osc_period"] = lambda G, A, g: c(A["T"] * A["f"], 1) and c(A["T"] * G["N"], G["t"])
+    L["_hooke"] = lambda G, A, g: c(A["k"] * G["x_cm"] / 100, G["m"] * g)
+    L["_pendulum"] = lambda G, A, g: c(g * {**G, **A}["T"] ** 2, 4 * math.pi ** 2 * {**G, **A}["L"])
+    L["_spring_period"] = lambda G, A, g: c(G["k"] * A["T"] ** 2, 4 * math.pi ** 2 * G["m"]) and c(A["f"] * A["T"], 1)
+    L["_shm_energy"] = lambda G, A, g: (c(0.5 * G["m"] * A["v"] ** 2, A["E"])  # all kinetic at equilibrium
+                                        and c(A["E"], 0.5 * G["k"] * (G["A_cm"] / 100) ** 2))
+
 
 _laws()
 
@@ -548,7 +733,8 @@ def test_physics(topic, level, g, nice):
             continue
         G, A, var = p.facts["given"], p.facts["ans"], p.facts["variant"]
         assert var in LAWS, f"{var} has no physics check in tests/test_quality.py"
-        drawn = {k: p.facts[k] for k in ("graph", "forces") if k in p.facts}  # values shown only in the figure
+        # values shown only in the figure, or as a formula (I = 2/5 MR^2)
+        drawn = {k: p.facts[k] for k in ("graph", "forces", "inertia") if k in p.facts}
         assert LAWS[var]({**G, **drawn}, A, g), f"{var}: answers violate the check law {G} {drawn} {A}"
         for k, val in G.items():
             if val == 0 or k == "n":  # stated in words: "from rest", "fourth harmonic"
@@ -600,7 +786,8 @@ def _ctx(seed, level, g):
 # AP-level problem types whose values can't all be simple (trig, square roots, physical constants).
 NOT_WHOLE_NUMBER = {"_circ_orbit", "_coulomb", "_field", "_snell", "_lens", "_gas", "_circ_string",
                     "_string_harmonic", "_heat_melt", "_proj_horiz_full", "_circ_combo",
-                    "_newton_fbd_2d"}  # magnitude is whole in that mode; the direction angle isn't
+                    "_newton_fbd_2d",  # magnitude is whole in that mode; the direction angle isn't
+                    "_ang_velocity", "_pendulum", "_spring_period"}  # 2π
 
 
 def test_whole_number_mode():

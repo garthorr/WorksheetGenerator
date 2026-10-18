@@ -20,7 +20,19 @@ EXPECTED = {
     "_newton_fbd_2d", "_newton_friction", "_newton_incline", "_newton_atwood", "_energy_work_angle",
     "_energy_coaster", "_mom_inelastic", "_mom_elastic", "_circ_series", "_circ_parallel", "_circ_combo",
     "_snell", "_lens", "_buoyancy", "_kin_xt_graph", "_kin_vt_graph", "_kin_vt_graph_signed",
+    # geometry
+    "_transversal", "_transversal_alg", "_triangle_sum", "_triangle_sum_alg", "_exterior", "_polygon", "_s45", "_s30",
+    "_s_rational", "_similar_sides", "_splitter", "_classify", "_inscribed", "_sector", "_chords", "_prism",
+    "_cylinder", "_cone", "_sphere", "_surface", "_translate", "_reflect", "_rotate", "_dilate", "_compose",
+    "_law_sines", "_area_sine", "_cosines_side", "_cosines_angle",
+    # rotation & oscillations
+    "_seesaw", "_beam_supports", "_pulley_mass", "_pendulum", "_spring_period", "_shm_energy",
 }
+# Geometry figures that mark the unknown they ask for (x, y or θ).
+MARKS_UNKNOWN = {"_transversal", "_triangle_sum", "_s45", "_s30", "_s_rational", "_similar_sides", "_splitter",
+                 "_inscribed", "_chords", "_law_sines", "_cosines_side", "_cosines_angle"}
+GEOMETRY = {"angles", "special_right", "similarity", "coordinate_geo", "circles", "solids", "transformations",
+            "triangle_trig"}
 
 
 @cache
@@ -84,8 +96,12 @@ def test_figures_never_show_the_answer():
         for v in (ans.values() if isinstance(ans, dict) else []):
             if isinstance(v, (int, float)) and abs(v) > 1e-9 and not among(v, q_nums):  # a given may equal the answer
                 assert not among(v, fig_nums), f"figure reveals answer {v}: {p.question}"
-        if p.topic in ("pythagorean", "trig_right"):  # the side or angle asked for is marked x or θ
+        if p.topic in ("pythagorean", "trig_right") or p.facts["variant"] in MARKS_UNKNOWN:
             assert {"x", "θ"} & set(labels(p.figure)), f"figure doesn't mark the unknown: {p.question}"
+        if p.topic in GEOMETRY and not p.facts.get("figure_required"):  # no number from the answer key
+            for v in _numbers_in(p.answer.replace("^\\circ", "")):
+                if not among(v, q_nums):
+                    assert not among(v, fig_nums), f"figure reveals answer {v}: {p.question}"
 
 
 def test_turning_figures_off_keeps_only_required_ones():
