@@ -16,6 +16,12 @@ Served at **https://worksheets.tastymath.com** through Traefik.
   equilibrium, rotational kinematics and τ = Iα (pulleys with mass), rotational kinetic
   energy, angular momentum and rolling, and springs and pendulums. Torque and
   oscillations are also in Conceptual Physics.
+- **Multiple choice for AP Physics 1 only:** AP Physics 1 sections can switch to AP-style
+  multiple choice: four choices (A)–(D), one correct, numbers listed smallest to largest.
+  Wrong choices come from the mistakes students make on each problem type (a missing square
+  root, sin for cos, a forgotten ½ or starting velocity, mass instead of weight), and
+  derivations get wrong expressions the same way. The correct letter is spread evenly over
+  A–D. Math and Conceptual Physics sections stay free response.
 - **Pick skills:** each topic is made of named skills (e.g. *Factor ax² + bx + c*,
   *Simplest radical form*, *Free fall*) marked E/M/H for difficulty. A section uses
   every skill at its difficulty, or exactly the skills you click.
@@ -172,6 +178,10 @@ and `ctx.exact_or_decimal()`, and plain decimals should use `ctx.round_note()` a
   every topic belongs to a course.
 - **Well-formed:** clean wording, g is stated exactly when it matters, whole-number mode
   delivers simple values, and every formula renders in KaTeX (`tests/test_katex.py`).
+
+`tests/test_mc.py` checks multiple choice: exactly one choice is the independently checked
+answer, all four differ, wrong choices mostly come from modeled mistakes, the letters are
+spread evenly, and the option exists only for AP Physics 1.
 
 `tests/test_figures.py` checks that every figure is valid SVG, only shows numbers that are in
 the question (or that the problem is read from), never shows the answer, and marks the unknown.

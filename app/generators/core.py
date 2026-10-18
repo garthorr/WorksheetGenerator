@@ -48,6 +48,9 @@ COURSE_UNITS = {
 
 PLACE_NAMES = {0: "whole number", 1: "tenth", 2: "hundredth", 3: "thousandth"}
 
+# Multiple choice is offered for AP Physics 1 only (its exam has a multiple-choice section).
+MC_COURSE = "ap1"
+
 
 @dataclass
 class Problem:
@@ -63,6 +66,8 @@ class Problem:
     skill: str = ""
     figure: str = ""  # SVG drawn from the problem's values (see drawings.py); empty if none
     key: str = ""  # identity for "no repeats": the question, plus the figure when there is one
+    choices: list[str] = field(default_factory=list)  # multiple choice: LaTeX for (A)-(D), without $
+    correct: int | None = None  # multiple choice: index of the right choice
     # Machine-readable data for tests and the whole-number filter, never sent to the client.
     # Physics variants store {"given": {name: value}, "ans": {name: value}}.
     facts: dict = field(default_factory=dict, repr=False)
@@ -81,6 +86,7 @@ class Ctx:
     form: str = "both"  # math: "exact" (π, radicals), "decimal", or "both"
     places: int = 1  # math: round decimal answers to this many decimal places
     figures: bool = True  # include figures (problems that can't be done without one keep theirs)
+    mc: bool = False  # multiple choice (AP Physics 1 topics only; see mc.py)
 
     # ---- physics
     def fmt(self, v: float) -> str:
@@ -160,6 +166,7 @@ class Topic:
             "exact_forms": self.exact_forms,
             "rounding": self.rounding,
             "figures": self.figures,
+            "mc": supports_mc(self.id),
             "levels": sorted(self.variants),
             "skills": [{"id": s.id, "label": s.label, "levels": sorted(s.levels)} for s in self.skills.values()],
         }
@@ -172,6 +179,10 @@ def topic(id: str, subject: str, category: str, name: str, description: str, *, 
           exact_forms: bool = False, rounding: bool = False, figures: bool = False) -> None:
     assert courses and all(c in COURSES and COURSES[c][1] == subject for c in courses), (id, courses)
     TOPICS[id] = Topic(id, subject, category, name, description, courses, exact_forms, rounding, figures)
+
+
+def supports_mc(topic_id: str) -> bool:
+    return MC_COURSE in TOPICS[topic_id].courses
 
 
 def slug(label: str) -> str:
@@ -237,9 +248,12 @@ def two_sig_givens(question: str) -> str:
 def _run(v: Variant, topic_id: str, ctx: Ctx) -> Problem:
     p = v.fn(ctx)
     p.topic, p.skill = topic_id, v.skill
+    p.facts.setdefault("variant", v.fn.__name__)
+    if ctx.mc:
+        from .mc import to_multiple_choice  # imported here: mc.py builds on this module
+        to_multiple_choice(p, ctx)
     if TOPICS[topic_id].subject == "physics" and not ctx.nice:
         p.question = two_sig_givens(p.question)
-    p.facts.setdefault("variant", v.fn.__name__)
     p.facts.setdefault("g", ctx.g)
     p.facts.setdefault("form", ctx.form)
     p.facts.setdefault("places", ctx.places)
@@ -272,7 +286,7 @@ MAX_TRIES = 40
 
 def generate_set(topic_id: str, difficulty: int, count: int, rng: random.Random, *, sig: int = 3,
                  g: float = 9.8, nice: bool = False, form: str = "both", places: int = 1, figures: bool = True,
-                 skills: list[str] | None = None, seen: set[str] | None = None) -> list[Problem]:
+                 skills: list[str] | None = None, seen: set[str] | None = None, mc: bool = False) -> list[Problem]:
     """Generate ``count`` problems for one section.
 
     - Draws from every skill at the difficulty, or only the chosen ``skills``.
@@ -283,6 +297,8 @@ def generate_set(topic_id: str, difficulty: int, count: int, rng: random.Random,
     """
     t = TOPICS[topic_id]
     nice = nice and t.subject == "physics"  # whole-number mode is a physics option
+    if mc and not supports_mc(topic_id):
+        raise ValueError(f"multiple choice is only for AP Physics 1 topics, not {t.name}")
     pool = variants_for(topic_id, difficulty, skills)
     order = rng.sample(pool, len(pool))
     seen = set() if seen is None else seen
@@ -293,7 +309,7 @@ def generate_set(topic_id: str, difficulty: int, count: int, rng: random.Random,
         best, best_score = None, -1
         for _ in range(MAX_TRIES):
             ctx = Ctx(rng=rng, difficulty=difficulty, sig=sig, g=g, nice=nice, form=form, places=places,
-                      figures=figures)
+                      figures=figures, mc=mc)
             p = _run(v, topic_id, ctx)
             p.facts["slot"] = pool.index(v)  # which problem type, for rotation checks
             p.key = problem_key(p.question, p.figure)

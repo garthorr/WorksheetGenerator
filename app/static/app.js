@@ -195,7 +195,8 @@ function renderCatalog() {
     for (const t of topics) {
       list.append(el("button", {
         class: "topic", title: `Add a "${t.name}" section`,
-        onclick: (ev) => { addSection({ subject: t.subject, topic: t.id, ...COURSE_DEFAULTS[course] });
+        onclick: (ev) => { addSection({ subject: t.subject, topic: t.id, course: course === "all" ? "" : course,
+          ...COURSE_DEFAULTS[course] });
           ev.currentTarget.classList.add("flash");
           setTimeout(() => ev.currentTarget?.classList.remove("flash"), 600); },
       }, el("span", { class: "name" }, t.name), el("span", { class: "desc" }, t.description),
@@ -212,13 +213,21 @@ function addSection(partial) {
   const cfg = {
     title: "", subject: "math", topic: "", custom_topic: "", count: 5, difficulty: 2,
     source: "builtin", ai_prompt: "", skills: null, g: null, nice: null, answer_form: null, places: null,
-    figures: null, ...partial,
+    figures: null, format: "free", course: "", ...partial,
   };
   if (cfg.topic === "custom") cfg.source = "ai";
   state.sheet.sections.push({ config: cfg, problems: [], error: "" });
   renderSections();
   renderPreview();
   saveDraft();
+}
+
+// Multiple choice is for AP Physics 1 only: sections added from the AP Physics 1 view, or topics
+// that only AP Physics 1 has. Built-in problems only.
+function mcAllowed(cfg) {
+  const t = state.topicById[cfg.topic];
+  if (!t?.mc || cfg.source !== "builtin") return false;
+  return cfg.course === "ap1" || (t.courses.length === 1 && t.courses[0] === "ap1");
 }
 
 function topicSelect(cfg, onchange) {
@@ -307,6 +316,7 @@ function renderSections() {
       if (cfg.topic === "custom") cfg.source = "ai";
       const t = state.topicById[cfg.topic];
       if (t) cfg.subject = t.subject;
+      if (!mcAllowed(cfg)) cfg.format = "free";
       saveDraft();
       renderSections();
       if (rerenderPreview) renderPreview();
@@ -354,6 +364,11 @@ function renderSections() {
           : seg([["builtin", "Built-in (exact)"], ["ai", "✨ AI (Ollama)", "ai"]], cfg.source, (v) => update({ source: v }))),
     );
     const topicMeta = state.topicById[cfg.topic];
+    if (mcAllowed(cfg)) {
+      card.append(el("label", { title: "AP-style multiple choice: four choices, one correct, wrong choices from common mistakes" },
+        "Format", seg([["free", "Free response"], ["mc", "Multiple choice"]], cfg.format || "free",
+          (v) => { sec.problems = []; update({ format: v }, true); })));
+    }
     if (topicMeta && topicMeta.skills.length > 1) card.append(skillPicker(cfg, topicMeta, update));
     if (cfg.subject === "math" && (cfg.source === "ai" || topicMeta)) {
       const opts = answerOptions(cfg, cfg.source === "ai" ? null : topicMeta, update);
@@ -498,6 +513,7 @@ function renderPreview() {
       n += 1;
       const q = mathText("div", p.question, "q");
       if (p.figure) q.append(figureImg(p.figure));
+      if (p.choices?.length) q.append(choiceList(p.choices));
       const b = badge(p);
       if (b) q.append(b);
       const tools = el("div", { class: "ptools" },
@@ -521,6 +537,11 @@ function renderPreview() {
     `@page { size: ${s.paper === "a4" ? "A4" : "letter"}; margin: 0.6in 0.65in; }`;
 }
 
+function choiceList(choices) {
+  return el("ol", { class: "choices" }, ...choices.map((c, i) =>
+    el("li", {}, el("span", { class: "letter" }, `(${"ABCD"[i]})`), mathText("span", `$\\displaystyle ${c}$`))));
+}
+
 // ------------------------------------------------------------------ edit dialog
 
 function editProblem(si, pi) {
@@ -529,15 +550,24 @@ function editProblem(si, pi) {
   $("#edit-q").value = p.question;
   $("#edit-a").value = p.answer;
   $("#edit-s").value = p.solution || "";
+  $("#edit-choices-row").hidden = !p.choices?.length;
+  $("#edit-choices").value = (p.choices || []).join("\n");
   $("#edit-figure-row").hidden = !p.figure;
   $("#edit-keep-figure").checked = true;
+  const choices = () => $("#edit-choices").value.split("\n").map((c) => c.trim()).filter(Boolean);
   const preview = () => $("#edit-preview").replaceChildren(
-    mathText("div", $("#edit-q").value), el("hr"), mathText("div", "Answer: " + $("#edit-a").value));
+    mathText("div", $("#edit-q").value), ...(p.choices?.length ? [choiceList(choices())] : []),
+    el("hr"), mathText("div", "Answer: " + $("#edit-a").value));
   preview();
-  ["#edit-q", "#edit-a"].forEach((id) => ($(id).oninput = preview));
+  ["#edit-q", "#edit-a", "#edit-choices"].forEach((id) => ($(id).oninput = preview));
   dlg.onclose = () => {
     if (dlg.returnValue !== "save") return;
     Object.assign(p, { question: $("#edit-q").value, answer: $("#edit-a").value, solution: $("#edit-s").value });
+    if (p.choices?.length) {
+      p.choices = choices();
+      const letter = /^\(([A-D])\)/.exec(p.answer.trim());  // the key's letter, e.g. "(B) 12 m/s"
+      p.correct = letter ? "ABCD".indexOf(letter[1]) : null;
+    }
     if (p.figure && !$("#edit-keep-figure").checked) p.figure = "";
     if (p.source === "ai") { p.verified = null; p.check_note = "Edited by hand."; }
     saveDraft();

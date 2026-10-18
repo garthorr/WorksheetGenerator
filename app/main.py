@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import storage
 from .ai import AIError, generate_ai, list_models
 from .generators import TOPICS, generate_set
-from .generators.core import COURSE_UNITS, COURSES, PLACE_NAMES, norm_question, problem_key
+from .generators.core import COURSE_UNITS, COURSES, MC_COURSE, PLACE_NAMES, norm_question, problem_key, supports_mc
 
 log = logging.getLogger("worksheets")
 STATIC = Path(__file__).parent / "static"
@@ -139,6 +139,9 @@ class Section(BaseModel):
     answer_form: Literal["both", "exact", "decimal"] | None = None  # math: exact (π, radicals) and/or decimal
     places: Literal[0, 1, 2, 3] | None = None  # math: decimal places to round to
     figures: bool | None = None  # include figures (problems read off a figure always keep theirs)
+    # Multiple choice: AP Physics 1 only, built-in problems only.
+    format: Literal["free", "mc"] = "free"
+    course: str = Field("", max_length=20)  # the course view the section was added from, if any
 
 
 class GenerateRequest(BaseModel):
@@ -179,11 +182,15 @@ def _ai_instructions(sec: Section, opts: dict) -> str:
 
 async def _make(sec: Section, rng: random.Random, settings: dict, count: int, seen: set[str]) -> list[dict]:
     opts = _options(sec, settings)
+    mc = sec.format == "mc"
+    if mc and (sec.source != "builtin" or sec.topic not in TOPICS or not supports_mc(sec.topic)
+               or sec.course not in ("", MC_COURSE)):
+        raise HTTPException(400, "Multiple choice is only for built-in AP Physics 1 topics")
     if sec.source == "builtin":
         if sec.topic not in TOPICS:
             raise HTTPException(400, f"Unknown topic {sec.topic!r} (custom topics need the AI source)")
         try:
-            probs = generate_set(sec.topic, sec.difficulty, count, rng, skills=sec.skills, seen=seen, **opts)
+            probs = generate_set(sec.topic, sec.difficulty, count, rng, skills=sec.skills, seen=seen, mc=mc, **opts)
         except KeyError as e:
             raise HTTPException(400, str(e).strip("'\"")) from e
         return [p.to_dict() for p in probs]
