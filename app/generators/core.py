@@ -25,6 +25,7 @@ COURSES = {
     "precalc": ("Precalculus", "math"),
     "calc": ("Beyond Precalculus", "math"),
     "conceptual": ("Conceptual Physics", "physics"),
+    "physics": ("Physics", "physics"),
     "ap1": ("AP Physics 1", "physics"),
 }
 
@@ -37,9 +38,14 @@ COURSE_UNITS = {
     "alg2": ["Systems of equations", "Quadratics", "Exponents", "Exponentials & logarithms"],
     "precalc": ["Exponentials & logarithms", "Right triangles", "Triangle trigonometry", "Limits"],
     "calc": ["Limits", "Calculus"],
+    # Written-response questions (explain, predict, compare), no calculation: conceptual.py
     "conceptual": ["Kinematics", "Forces & dynamics", "Momentum", "Work, energy & power",
                    "Torque & rotational dynamics", "Circular motion & gravitation", "Fluids", "Heat", "Oscillations",
                    "Waves & sound", "Electricity", "Light & optics"],
+    # Algebra-based, with calculation
+    "physics": ["Kinematics", "Forces & dynamics", "Momentum", "Work, energy & power",
+                "Torque & rotational dynamics", "Circular motion & gravitation", "Fluids", "Heat", "Oscillations",
+                "Waves & sound", "Electricity", "Light & optics"],
     # College Board AP Physics 1 unit order (circular motion and gravitation are part of Unit 2)
     "ap1": ["Kinematics", "Forces & dynamics", "Circular motion & gravitation", "Work, energy & power",
             "Momentum", "Torque & rotational dynamics", "Rotational energy & momentum", "Oscillations", "Fluids",
@@ -152,6 +158,7 @@ class Topic:
     exact_forms: bool = False
     rounding: bool = False
     figures: bool = False  # some problems come with a figure (the GUI offers a figures toggle)
+    written: bool = False  # written-response questions with a model answer, no calculation (conceptual.py)
     variants: dict[int, list[Variant]] = field(default_factory=dict)
     skills: dict[str, Skill] = field(default_factory=dict)
 
@@ -166,6 +173,7 @@ class Topic:
             "exact_forms": self.exact_forms,
             "rounding": self.rounding,
             "figures": self.figures,
+            "written": self.written,
             "mc": supports_mc(self.id),
             "levels": sorted(self.variants),
             "skills": [{"id": s.id, "label": s.label, "levels": sorted(s.levels)} for s in self.skills.values()],
@@ -176,9 +184,9 @@ TOPICS: dict[str, Topic] = {}
 
 
 def topic(id: str, subject: str, category: str, name: str, description: str, *, courses: list[str],
-          exact_forms: bool = False, rounding: bool = False, figures: bool = False) -> None:
+          exact_forms: bool = False, rounding: bool = False, figures: bool = False, written: bool = False) -> None:
     assert courses and all(c in COURSES and COURSES[c][1] == subject for c in courses), (id, courses)
-    TOPICS[id] = Topic(id, subject, category, name, description, courses, exact_forms, rounding, figures)
+    TOPICS[id] = Topic(id, subject, category, name, description, courses, exact_forms, rounding, figures, written)
 
 
 def supports_mc(topic_id: str) -> bool:
@@ -252,7 +260,7 @@ def _run(v: Variant, topic_id: str, ctx: Ctx) -> Problem:
     if ctx.mc:
         from .mc import to_multiple_choice  # imported here: mc.py builds on this module
         to_multiple_choice(p, ctx)
-    if TOPICS[topic_id].subject == "physics" and not ctx.nice:
+    if TOPICS[topic_id].subject == "physics" and not ctx.nice and not TOPICS[topic_id].written:
         p.question = two_sig_givens(p.question)
     p.facts.setdefault("g", ctx.g)
     p.facts.setdefault("form", ctx.form)

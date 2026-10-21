@@ -134,3 +134,13 @@ def test_one_failing_section_does_not_sink_the_rest(client, monkeypatch):
                                                                    {"topic": "area", "count": 2}]})
     bad, good = r.json()["sections"]
     assert "went wrong" in bad["error"] and len(good["problems"]) == 2
+
+
+def test_conceptual_sections_ask_ai_for_written_response():
+    opts = main._options(main.Section(topic="kinematics"), storage.DEFAULT_SETTINGS)
+    written = main.Section(topic="concept_motion", subject="physics", source="ai")
+    assert "written-response" in main._ai_instructions(written, opts) and "g =" not in main._ai_instructions(written, opts)
+    assert main._written(main.Section(topic="custom", custom_topic="tides", subject="physics", course="conceptual"))
+    assert not main._written(main.Section(topic="kinematics", subject="physics", course="physics"))
+    physics = main.Section(topic="kinematics", subject="physics")
+    assert main._number_format(physics, {**opts, "sig": 3})(7.9721) == "7.97"

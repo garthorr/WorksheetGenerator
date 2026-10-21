@@ -22,7 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from . import storage
 from .ai import AIError, generate_ai, list_models
 from .generators import TOPICS, generate_set
-from .generators.core import COURSE_UNITS, COURSES, MC_COURSE, PLACE_NAMES, norm_question, problem_key, supports_mc
+from .generators.core import (COURSE_UNITS, COURSES, MC_COURSE, PLACE_NAMES, Ctx, norm_question, problem_key, sig,
+                              supports_mc)
 
 log = logging.getLogger("worksheets")
 STATIC = Path(__file__).parent / "static"
@@ -225,19 +226,42 @@ def _options(sec: Section, settings: dict) -> dict:
             "places": int(pick(sec.places, "math_places")), "figures": bool(pick(sec.figures, "figures"))}
 
 
+CONCEPTUAL = ('Write conceptual written-response questions: ask students to explain, predict or compare, '
+              'using proportional reasoning where it helps ("if the distance doubles, what happens to the '
+              'force?") and little or no calculation. "answer" is a 2-3 sentence model answer that states the '
+              'result and the reasoning. Set "given" to {}, "answer_formula" to "", "answer_value" to null '
+              'and "solution" to "".')
+
+
+def _written(sec: Section) -> bool:
+    """Conceptual Physics: written-response questions with a model answer, no calculation."""
+    t = TOPICS.get(sec.topic)
+    return bool(t and t.written) or (sec.subject == "physics" and sec.course == "conceptual")
+
+
 def _ai_instructions(sec: Section, opts: dict) -> str:
     extra = sec.ai_prompt
+    if _written(sec):
+        return f"{CONCEPTUAL} {extra}".strip()
     if sec.subject == "physics":
         extra += f" Use g = {opts['g']:g} m/s^2 and state it in problems that need it."
         if opts["nice"]:
             extra += " Choose simple values so that every answer is a whole number or has one decimal place."
     else:
         place = PLACE_NAMES[opts["places"]]
-        extra += {"exact": " Give exact answers (simplest radical form, in terms of pi) rather than decimals.",
-                  "decimal": f" Round decimal answers to the nearest {place}.",
-                  "both": f" Where an answer has an exact form (radical or pi), give it and a decimal "
-                          f"rounded to the nearest {place}."}[opts["form"]]
+        extra += {"exact": " Give exact answers (simplest radical form, in terms of pi) rather than decimals, "
+                           "written out in full.",
+                  "decimal": f" Decimal answers are rounded to the nearest {place}.",
+                  "both": f" Where an answer has an exact form (radical or pi), give it, then ≈ [[ANSWER]] "
+                          f"for the decimal (rounded to the nearest {place})."}[opts["form"]]
     return extra.strip()
+
+
+def _number_format(sec: Section, opts: dict):
+    """How the app writes the numbers it fills in for an AI answer: sig figs (physics), else rounded."""
+    if sec.subject == "physics":
+        return lambda v: sig(v, opts["sig"])
+    return Ctx(rng=random.Random(), places=opts["places"]).rnd
 
 
 async def _make(sec: Section, rng: random.Random, settings: dict, count: int, seen: set[str]) -> list[dict]:
@@ -260,6 +284,8 @@ async def _make(sec: Section, rng: random.Random, settings: dict, count: int, se
         if not sec.custom_topic.strip():
             raise HTTPException(400, "Enter a custom topic for AI generation")
         topic_text = sec.custom_topic
+        if _written(sec):
+            topic_text += ", for a high school Conceptual Physics class"
     elif sec.topic in TOPICS:
         t = TOPICS[sec.topic]
         chosen = [t.skills[s].label for s in sec.skills or [] if s in t.skills]
@@ -268,8 +294,9 @@ async def _make(sec: Section, rng: random.Random, settings: dict, count: int, se
     else:
         raise HTTPException(400, f"Unknown topic {sec.topic!r}")
     extra = _ai_instructions(sec, opts)
-    probs = await generate_ai(settings, subject=sec.subject, topic=topic_text, difficulty=sec.difficulty,
-                              count=count, extra=extra, constants={"g": opts["g"]})
+    probs = await generate_ai(settings, subject="conceptual physics" if _written(sec) else sec.subject,
+                              topic=topic_text, difficulty=sec.difficulty, count=count, extra=extra,
+                              constants={"g": opts["g"]}, number=_number_format(sec, opts))
     for p in probs:
         p.topic = sec.topic
         p.key = problem_key(p.question)

@@ -90,7 +90,7 @@ def _object(ctx: Ctx):
 # ======================================================== Kinematics
 
 topic("kinematics", "physics", "Kinematics", "1D kinematics",
-      "Constant-acceleration motion, free fall and braking distances.", courses=['conceptual', 'ap1'], figures=True)
+      "Constant-acceleration motion, free fall and braking distances.", courses=['physics', 'ap1'], figures=True)
 
 # name, v0 max, accel range (lo, hi, step), top speed
 VEHICLES = [("car", 20, (1, 4, 0.5), 40), ("motorcycle", 20, (2, 6, 0.5), 50),
@@ -318,7 +318,7 @@ def _kin_throw_up(ctx: Ctx) -> Problem:
 # ======================================================== Projectiles
 
 topic("projectile", "physics", "Kinematics", "Projectile motion",
-      "Horizontal launches and angled launches over level ground.", courses=['conceptual', 'ap1'], figures=True)
+      "Horizontal launches and angled launches over level ground.", courses=['physics', 'ap1'], figures=True)
 
 LAUNCHES = [
     ("A marble rolls off the edge of a ${h}$ high table", "the marble", "table", (0.7, 1.2, 0.05), (0.5, 3, 0.1)),
@@ -395,7 +395,7 @@ def _proj_angle(ctx: Ctx) -> Problem:
 # ======================================================== Forces
 
 topic("newton", "physics", "Forces & dynamics", "Newton's laws & forces",
-      "F = ma, friction, inclined planes and Atwood machines.", courses=['conceptual', 'ap1'], figures=True)
+      "F = ma, friction, inclined planes and Atwood machines.", courses=['physics', 'ap1'], figures=True)
 
 # noun, mass range (lo, hi, step), acceleration range (lo, hi, step)
 PUSHED = [("cart", (2, 40, 1), (0.5, 5, 0.5)), ("car", (900, 2000, 50), (1, 4, 0.5)),
@@ -552,7 +552,7 @@ def _newton_atwood(ctx: Ctx) -> Problem:
 # ======================================================== Energy
 
 topic("energy", "physics", "Work, energy & power", "Work, energy & power",
-      "Kinetic/potential energy, work done by forces, energy conservation, power.", courses=['conceptual', 'ap1'],
+      "Kinetic/potential energy, work done by forces, energy conservation, power.", courses=['physics', 'ap1'],
       figures=True)
 
 
@@ -679,7 +679,7 @@ def _energy_friction_loss(ctx: Ctx) -> Problem:
 # ======================================================== Momentum
 
 topic("momentum", "physics", "Momentum", "Momentum & collisions",
-      "Momentum, impulse, inelastic and elastic 1D collisions.", courses=['conceptual', 'ap1'], figures=True)
+      "Momentum, impulse, inelastic and elastic 1D collisions.", courses=['physics', 'ap1'], figures=True)
 
 
 @variant("momentum", 1, "Momentum")
@@ -765,7 +765,7 @@ def _mom_elastic(ctx: Ctx) -> Problem:
 # ======================================================== Circular motion & gravitation
 
 topic("circular", "physics", "Circular motion & gravitation", "Circular motion & gravitation",
-      "Centripetal acceleration and force, universal gravitation, orbits.", courses=['conceptual', 'ap1'])
+      "Centripetal acceleration and force, universal gravitation, orbits.", courses=['physics', 'ap1'])
 
 # description, radius range, speed range, largest realistic centripetal acceleration (m/s^2)
 TURNS = [("A car rounds a curve of radius {r}", (30, 200, 5), (8, 30, 1), 8, "car"),
@@ -844,7 +844,7 @@ def _circ_orbit(ctx: Ctx) -> Problem:
 # ======================================================== Circuits
 
 topic("circuits", "physics", "Electricity", "DC circuits",
-      "Ohm's law, power, and series/parallel resistor networks.", courses=['conceptual'], figures=True)
+      "Ohm's law, power, and series/parallel resistor networks.", courses=['physics'], figures=True)
 
 E12 = [10, 12, 15, 18, 22, 27, 33, 39, 47, 56, 68, 82]
 RESISTORS = [r * k for k in (1, 10, 100) for r in E12]  # standard values, 10 Ω – 8.2 kΩ
@@ -957,7 +957,7 @@ def _circ_combo(ctx: Ctx) -> Problem:
 # ======================================================== Electrostatics
 
 topic("electrostatics", "physics", "Electricity", "Electrostatics",
-      "Coulomb's law and electric field of point charges.", courses=['conceptual'])
+      "Coulomb's law and electric field of point charges.", courses=['physics'])
 
 
 @variant("electrostatics", 1, "Coulomb's law")
@@ -998,7 +998,7 @@ def _field(ctx: Ctx) -> Problem:
 # ======================================================== Waves
 
 topic("waves", "physics", "Waves & sound", "Waves & sound",
-      "Wave speed, period, echoes and standing waves on strings.", courses=['conceptual'])
+      "Wave speed, period, echoes and standing waves on strings.", courses=['physics'])
 
 # description, speed range (lo, hi, step), frequency range (lo, hi, step)
 WAVES = [("a sound wave in air", (343, 343, 1), (100, 2000, 10)),
@@ -1089,7 +1089,7 @@ def _string_harmonic(ctx: Ctx) -> Problem:
 # ======================================================== Optics
 
 topic("optics", "physics", "Light & optics", "Optics",
-      "Snell's law, thin lenses and magnification.", courses=['conceptual'], figures=True)
+      "Snell's law, thin lenses and magnification.", courses=['physics'], figures=True)
 
 MEDIA = [("air", 1.00), ("water", 1.33), ("ice", 1.31), ("ethanol", 1.36), ("glycerin", 1.47),
          ("acrylic", 1.49), ("crown glass", 1.52), ("flint glass", 1.66), ("cubic zirconia", 2.15),
@@ -1133,7 +1133,7 @@ def _lens(ctx: Ctx) -> Problem:
 # ======================================================== Thermal
 
 topic("thermal", "physics", "Heat", "Heat & gases",
-      "Specific heat, latent heat and the ideal gas law.", courses=['conceptual'])
+      "Specific heat, latent heat and the ideal gas law.", courses=['physics'])
 
 SPECIFIC_HEAT = [("water", 4186), ("aluminum", 900), ("copper", 385), ("iron", 450), ("glass", 840)]
 C_UNIT = "J/(kg\\cdot ^\\circ C)"
@@ -1198,7 +1198,7 @@ def _gas(ctx: Ctx) -> Problem:
 # ======================================================== Fluids
 
 topic("fluids", "physics", "Fluids", "Fluids & pressure",
-      "Density, hydrostatic pressure and buoyancy.", courses=['conceptual', 'ap1'], figures=True)
+      "Density, hydrostatic pressure and buoyancy.", courses=['physics', 'ap1'], figures=True)
 
 # density in g/cm^3
 MATERIALS = [("aluminum", 2.70), ("iron", 7.87), ("copper", 8.96), ("lead", 11.3), ("gold", 19.3),

@@ -8,7 +8,7 @@ from app.ai import _numbers_in
 from app.generators import TOPICS, generate_set
 from app.generators.core import num, sig
 
-LEVELS = [(t, lv) for t in TOPICS for lv in sorted(TOPICS[t].variants)]
+LEVELS = [(t, lv) for t in TOPICS if not TOPICS[t].written for lv in sorted(TOPICS[t].variants)]  # written: no steps
 NO_STEPS = {"add_sub", "mul_div"}  # whole-number arithmetic: the answer is the work
 
 

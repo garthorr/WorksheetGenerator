@@ -9,6 +9,7 @@ equations). Every problem type must be covered, so new ones can't skip the check
 
 from __future__ import annotations
 
+import inspect
 import math
 import random
 import re
@@ -27,7 +28,7 @@ from app.safe_eval import safe_eval
 x, y = sp.symbols("x y")
 LEVELS = [(t, lv) for t in TOPICS for lv in sorted(TOPICS[t].variants)]
 MATH = [(t, lv) for t, lv in LEVELS if TOPICS[t].subject == "math"]
-PHYSICS = [(t, lv) for t, lv in LEVELS if TOPICS[t].subject == "physics"]
+PHYSICS = [(t, lv) for t, lv in LEVELS if TOPICS[t].subject == "physics" and not TOPICS[t].written]
 ids = [f"{t}-L{lv}" for t, lv in LEVELS]
 
 
@@ -798,3 +799,105 @@ def test_whole_number_mode():
     weak = {v: f"{sum(r)}/{len(r)}" for v, r in by_variant.items()
             if v not in NOT_WHOLE_NUMBER and sum(r) / len(r) < 0.9}
     assert not weak, f"problem types that rarely give simple values in whole-number mode: {weak}"
+
+
+# =================================================================== Conceptual Physics (written response)
+
+WRITTEN = [(t, lv) for t, lv in LEVELS if TOPICS[t].written]
+written_ids = [f"{t}-L{lv}" for t, lv in WRITTEN]
+
+# The relations behind the "what happens if" questions, written out again independently of conceptual.py
+# (with real constants, so a wrong exponent there can't hide).
+RELATIONS = {
+    "average_speed": lambda d, t: d / t,
+    "fall_speed": lambda t, m: 9.8 * t,
+    "fall_distance": lambda t, m: 0.5 * 9.8 * t ** 2,
+    "braking": lambda v: v ** 2 / (2 * 6.0),
+    "newton2": lambda F, m: F / m,
+    "weight": lambda m, g: m * g,
+    "momentum": lambda m, v: m * v,
+    "stopping_force": lambda dt, dp: dp / dt,
+    "kinetic": lambda m, v: 0.5 * m * v ** 2,
+    "potential": lambda m, h: m * 9.8 * h,
+    "power": lambda W, t: W / t,
+    "torque": lambda F, r: F * r,
+    "centripetal": lambda m, v, r: m * v ** 2 / r,
+    "gravity": lambda m, r: 6.674e-11 * m * 5.97e24 / r ** 2,
+    "pressure": lambda F, A: F / A,
+    "depth": lambda h, rho: rho * 9.8 * h,
+    "buoyant": lambda V, rho: rho * V * 9.8,
+    "heat": lambda m, dT: m * 4186 * dT,
+    "warming": lambda Q, m, c: Q / (m * c),
+    "hooke": lambda F, k: F / k,
+    "pendulum": lambda L, g, m: 2 * math.pi * math.sqrt(L / g),
+    "spring_period": lambda m, k, A: 2 * math.pi * math.sqrt(m / k),
+    "wavelength": lambda f, v: v / f,
+    "wave_speed": lambda f: 343.0,
+    "loudness": lambda P, r: P / (4 * math.pi * r ** 2),
+    "ohm": lambda V, R: V / R,
+    "coulomb": lambda q, r: 8.99e9 * q * 2e-6 / r ** 2,
+    "electric_power": lambda V, R: V ** 2 / R,
+    "brightness": lambda P, r: P / (4 * math.pi * r ** 2),
+    "light_delay": lambda d: d / 3e8,
+}
+PARAM = {r"\Delta t": "dt", r"\Delta p": "dp", r"\rho": "rho", r"\Delta T": "dT"}
+CHANGED = {Fraction(2): "doubled", Fraction(3): "tripled", Fraction(4): "quadrupled",
+           Fraction(9): "made 9 times as large", Fraction(1, 2): "cut in half", Fraction(1, 3): "reduced to one third",
+           Fraction(1, 4): "reduced to one quarter"}
+
+
+def factor_in(text: str) -> float:
+    """The change a phrase states: "doubles", "becomes $\\frac{1}{9}$ as strong", "twice as", "4 times as"."""
+    m = re.search(r"(?:^|\s)(does not change|doubles|triples|half as|twice as|(\d+) times as|"
+                  r"\$\\frac\{(\d+)\}\{(\d+)\}\$ (?:times )?as)", text)
+    assert m, f"no stated change: {text}"
+    word = m[1]
+    if m[3]:
+        return int(m[3]) / int(m[4])
+    return {"does not change": 1, "doubles": 2, "triples": 3, "half as": 0.5, "twice as": 2}.get(word) or int(m[2])
+
+
+@pytest.mark.parametrize("topic,level", WRITTEN, ids=written_ids)
+def test_what_if_answers_follow_the_physics(topic, level):
+    """Every "what happens if" answer, recomputed from an independent copy of its relation."""
+    checked = 0
+    for p in problems(topic, level):
+        s = p.facts.get("scaling")
+        if not s:
+            continue
+        rel = RELATIONS[s["law"]]
+        base = {name: random.Random(p.question + name).uniform(1, 5) for name in inspect.signature(rel).parameters}
+        changed = dict(base)
+        for sym, k in s["changes"].items():
+            changed[PARAM.get(sym, sym)] *= float(k)
+            # the wording names the change: the question for a given change, the answer for a target
+            assert CHANGED[k] in (p.answer if s["form"] == "inverse" else p.question), (CHANGED[k], p.question, p.answer)
+        ratio = rel(**changed) / rel(**base)
+        if s["form"] == "inverse":  # the question asks for a target; the answer names the change
+            target = factor_in(p.question.split(" to make ", 1)[1])
+            assert close(ratio, target), f"{p.answer} gives x{ratio:.4g}, not the x{target} asked for: {p.question}"
+        else:  # the answer's first sentence states the result
+            stated = factor_in(p.answer.split(". ")[0])
+            assert close(ratio, stated), f"x{ratio:.4g} expected, answer says x{stated}: {p.question} {p.answer}"
+        checked += 1
+    assert checked, "no what-if questions sampled"
+
+
+@pytest.mark.parametrize("topic,level", WRITTEN, ids=written_ids)
+def test_written_response_format(topic, level):
+    """A question to explain, little calculation, and a short model answer with no worked steps."""
+    for p in problems(topic, level):
+        assert p.answer and not p.solution, p.question
+        values = _numbers_in(re.sub(r"\\mathrm\{[^}]*\}", "", p.question))  # not the 3 in cm^3
+        assert len(values) <= 3, f"too many numbers for a conceptual question: {p.question}"
+        sentences = len(re.findall(r"[.?!](?:\s|$)", outside_math(p.answer)))
+        assert 1 <= sentences <= 4, f"{sentences} sentences: {p.answer}"
+        assert len(p.answer) < 450, p.answer
+
+
+def test_conceptual_physics_is_written_response_only():
+    for t in TOPICS.values():
+        assert t.written == ("conceptual" in t.courses), (t.id, t.courses)
+        if t.written:
+            assert t.courses == ["conceptual"] and not t.figures
+            assert all(len(vs) >= 2 for vs in t.variants.values()), f"{t.id}: a level with one problem type"

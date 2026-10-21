@@ -206,6 +206,7 @@ nav { display: flex; gap: 4px; }
 
 .paper.key .key-item { display: grid; grid-template-columns: 2em 1fr; padding: 5px 0; break-inside: avoid; border-bottom: 1px dotted #ccc; }
 .paper.key .key-item .a { font-weight: 600; }
+.paper.key .key-item .a.written { font-weight: 400; }  /* a model answer, not a result */
 .paper.key .key-item .s { grid-column: 2; color: #444; font-size: 10.5pt; white-space: pre-line; }
 .paper.key .key-item .note { grid-column: 2; font-family: system-ui, sans-serif; font-size: 9.5pt; color: #b54708; }
 

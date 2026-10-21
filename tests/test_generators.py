@@ -4,6 +4,7 @@ import pytest
 
 import asyncio
 import json
+import re
 
 import httpx
 
@@ -40,16 +41,16 @@ def test_safe_eval():
 
 
 def test_verify_and_parse():
-    ok, _ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*m*v**2", "answer_value": 9,
+    ok, *_ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*m*v**2", "answer_value": 9,
                      "answer": "$KE = 9.0\\,\\mathrm{J}$"})
-    text_bad, _ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*m*v**2", "answer_value": 9,
+    text_bad, *_ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*m*v**2", "answer_value": 9,
                            "answer": "12 J"})
-    attr, _ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*given.m*given['v']**2",
+    attr, *_ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*given.m*given['v']**2",
                        "answer_value": 9, "answer": "9 J"})
     assert (text_bad, attr) == ("fail", "pass")
-    bad, _ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*m*v**2", "answer_value": 18})
-    err, _ = _verify({"given": {"m": 2}, "answer_formula": "0.5*m*v**2", "answer_value": 9})
-    none, _ = _verify({"given": {}, "answer_formula": "", "answer_value": None})
+    bad, *_ = _verify({"given": {"m": 2, "v": 3}, "answer_formula": "0.5*m*v**2", "answer_value": 18})
+    err, *_ = _verify({"given": {"m": 2}, "answer_formula": "0.5*m*v**2", "answer_value": 9})
+    none, *_ = _verify({"given": {}, "answer_formula": "", "answer_value": None})
     assert (ok, bad, err, none) == ("pass", "fail", "error", "nonnumeric")
     items = _parse('```json\n{"problems": [{"question": "$\\frac{1}{2}$"}]}\n```')
     assert _fix_latex(items[0]["question"]) == "$\\frac{1}{2}$"
@@ -90,7 +91,7 @@ def test_ai_generation_end_to_end(monkeypatch):
     prompt once broke str.format and every AI request with it)."""
     sent = {}
 
-    async def fake_chat(settings, messages, fmt):
+    async def fake_chat(settings, messages, fmt, limit=None):
         sent["messages"] = messages
         return json.dumps({"problems": [{
             "question": "A $2\\,\\mathrm{kg}$ cart accelerates at $3\\,\\mathrm{m/s^2}$. Find the net force.",
@@ -164,3 +165,90 @@ def test_think_flag_only_for_thinking_models(monkeypatch):
         asyncio.run(ai._chat(settings, [], "json"))
     assert [p.get("think", "absent") for p in sent] == [False, True, "absent"]
     assert shown == ["qwen3", "mistral"]  # capabilities are asked once per model
+
+
+def test_app_fills_in_the_number():
+    """The model writes [[ANSWER]] and a formula; the app computes the number (models slip on arithmetic)."""
+    item = {"given": {"v0": 25, "theta_deg": 30}, "answer_formula": "(v0*sin(radians(theta_deg)))**2/(2*g)",
+            "answer_value": 7.76, "answer": "$h = [[ANSWER]]\\,\\mathrm{m}$",
+            "solution": "$h = \\frac{(25\\sin 30^\\circ)^2}{2(9.8)} = [[ANSWER]]\\,\\mathrm{m}$"}
+    status, note, value = _verify(item, {"g": 9.8})
+    assert status == "computed" and abs(value - 7.972) < 0.001 and "7.76" in note  # the model's slip, reported
+    assert _verify({**item, "answer_value": 7.97}, {"g": 9.8})[0] == "pass"
+    assert _verify({**item, "answer_formula": ""})[:3:2] == ("error", 7.76)  # only the model's estimate to show
+
+
+STORIES = ["A loaded cart rolls down a ramp in the school gym", "A hockey puck slides across the rink after a slap shot",
+           "Two dogs pull a sled over packed snow", "An elevator car rises toward the tenth floor",
+           "A rowing team drives its boat along a calm river", "A delivery drone climbs away from the warehouse roof",
+           "A toy rocket leaves its launch pad", "A bowling ball rolls toward the pins",
+           "A shopper shoves a trolley through the parking lot", "A snowmobile tows a skier across a frozen lake",
+           "A freight locomotive hauls coal cars out of the yard", "A model glider is pulled into the air by a winch"]
+
+
+def test_ai_batches_list_earlier_problems_and_fill_answers(monkeypatch):
+    calls, made = [], iter(range(100))
+
+    async def fake_chat(settings, messages, fmt, limit=None):
+        n = int(re.search(r"Write (\d+) ", messages[1]["content"])[1])
+        calls.append((n, messages[1]["content"]))
+        return json.dumps({"problems": [{
+            "question": f"{STORIES[k % 12]}; its mass is ${k + 2}\\,\\mathrm{{kg}}$. Find the net force on it.",
+            "answer": "$F = [[ANSWER]]\\,\\mathrm{N}$", "solution": "$F = ma = [[ANSWER]]\\,\\mathrm{N}$",
+            "given": {"m": k + 2, "a": 3}, "answer_formula": "m * a", "answer_value": 999}
+            for k in (next(made) for _ in range(n))]})
+
+    monkeypatch.setattr(ai, "_chat", fake_chat)
+    settings = {"ollama_url": "http://ollama:11434", "ollama_model": "m", "ai_strict": True}
+    probs = asyncio.run(ai.generate_ai(settings, subject="physics", topic="Newton's laws", difficulty=2, count=12,
+                                       number=lambda v: f"{v:.1f}"))
+    assert [n for n, _ in calls] == [5, 5, 2]
+    # The estimate (999) disagrees, so each is kept with the app's number and flagged to check the formula.
+    assert len(probs) == 12 and all(p.verified is None for p in probs)
+    assert probs[0].answer == "$F = 6.0\\,\\mathrm{N}$" and "[[ANSWER]]" not in probs[0].solution
+    assert "must practice the topic above (Newton's laws)" in calls[0][1] and "already exist" not in calls[0][1]
+    assert "already exist" in calls[1][1] and "A loaded cart rolls" in calls[1][1]  # later batches see earlier ones
+
+
+def test_ai_near_duplicates_are_replaced(monkeypatch):
+    replies = iter([["A cliff diver runs off a 20 m ledge at 3.0 m/s. How far out does she land?",
+                     "A cliff diver runs off a 20 m ledge at 4.0 m/s. How far out does she land?"],
+                    ["A golfer chips a ball off a 5.0 m terrace at 8.0 m/s. How long is it in the air?"]])
+
+    async def fake_chat(settings, messages, fmt, limit=None):
+        return json.dumps({"problems": [{"question": q, "answer": "an explanation", "solution": "", "given": {},
+                                         "answer_formula": "", "answer_value": None} for q in next(replies)]})
+
+    monkeypatch.setattr(ai, "_chat", fake_chat)
+    settings = {"ollama_url": "http://ollama:11434", "ollama_model": "m", "ai_strict": False}
+    probs = asyncio.run(ai.generate_ai(settings, subject="physics", topic="projectiles", difficulty=2, count=2))
+    assert [p.question[:12] for p in probs] == ["A cliff dive", "A golfer chi"]
+
+
+def test_a_garbled_batch_is_refilled_and_replies_are_capped(monkeypatch):
+    replies = iter(['{"problems": [{"question": "A cliff diver runs off a ledge', json.dumps({"problems": [
+        {"question": f"{s}. Explain what happens.", "answer": "an explanation", "solution": "", "given": {},
+         "answer_formula": "", "answer_value": None} for s in STORIES[:2]]})])
+    limits = []
+
+    async def fake_chat(settings, messages, fmt, limit=None):
+        limits.append(limit)
+        return next(replies)
+
+    monkeypatch.setattr(ai, "_chat", fake_chat)
+    settings = {"ollama_url": "http://ollama:11434", "ollama_model": "m", "ai_strict": True}
+    probs = asyncio.run(ai.generate_ai(settings, subject="physics", topic="t", difficulty=2, count=2))
+    assert len(probs) == 2 and limits == [2 * ai.TOKENS_PER_PROBLEM + 300] * 2
+
+
+def test_near_copies_fill_in_only_as_a_last_resort(monkeypatch):
+    async def fake_chat(settings, messages, fmt, limit=None):
+        n = int(re.search(r"Write (\d+) ", messages[1]["content"])[1])
+        return json.dumps({"problems": [{"question": f"A cliff diver runs off a 20 m ledge at {k + 3}.0 m/s. How far "
+                                                     f"out does she land?", "answer": "x", "solution": "", "given": {},
+                                         "answer_formula": "", "answer_value": None} for k in range(n)]})
+
+    monkeypatch.setattr(ai, "_chat", fake_chat)
+    settings = {"ollama_url": "http://ollama:11434", "ollama_model": "m", "ai_strict": True}
+    probs = asyncio.run(ai.generate_ai(settings, subject="physics", topic="projectiles", difficulty=2, count=3))
+    assert len(probs) == 3 and all("Very similar" in p.check_note for p in probs[1:])

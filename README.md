@@ -4,9 +4,15 @@ A dockerized web app for building math and physics worksheets with answer keys.
 Served at **https://worksheet.home.tastymath.com** through the home Traefik, over Tailscale only.
 
 - **Pick topics by course:** Algebra 1, Geometry, Algebra 2, Precalculus, Conceptual
-  Physics and AP Physics 1, with units in teaching order (calculus sits under
-  "Beyond Precalculus"). You can also type any **custom topic** and have your Ollama
-  model write the problems.
+  Physics, Physics (algebra-based) and AP Physics 1, with units in teaching order
+  (calculus sits under "Beyond Precalculus"). You can also type any **custom topic** and
+  have your Ollama model write the problems.
+- **Conceptual Physics is written response, not calculation:** every unit has questions
+  that ask students to explain, predict or compare (objects of different mass fall
+  together, action and reaction, series vs. parallel bulbs, why a dam is thicker at the
+  bottom), plus "what happens if…" proportional reasoning ("the distance between two
+  charges triples: what happens to the force?"). The key shows a short model answer. The
+  calculation versions of those units are in the **Physics** course.
 - **Geometry:** angle relationships (parallel lines and transversals, triangle sums,
   exterior angles, polygons), special right triangles, similar triangles and the
   side-splitter theorem, distance and midpoint, transformations, circles (inscribed angles,
@@ -15,13 +21,14 @@ Served at **https://worksheet.home.tastymath.com** through the home Traefik, ove
 - **AP Physics 1, every unit:** kinematics through fluids, including torque and static
   equilibrium, rotational kinematics and τ = Iα (pulleys with mass), rotational kinetic
   energy, angular momentum and rolling, and springs and pendulums. Torque and
-  oscillations are also in Conceptual Physics.
+  oscillations are also in the Physics course.
 - **Multiple choice for AP Physics 1 only:** AP Physics 1 sections can switch to AP-style
   multiple choice: four choices (A)–(D), one correct, numbers listed smallest to largest.
   Wrong choices come from the mistakes students make on each problem type (a missing square
   root, sin for cos, a forgotten ½ or starting velocity, mass instead of weight), and
   derivations get wrong expressions the same way. The correct letter is spread evenly over
-  A–D. Math and Conceptual Physics sections stay free response.
+  A–D. Math and Physics sections stay free response, and Conceptual Physics is written
+  response.
 - **Pick skills:** each topic is made of named skills (e.g. *Factor ax² + bx + c*,
   *Simplest radical form*, *Free fall*) marked E/M/H for difficulty. A section uses
   every skill at its difficulty, or exactly the skills you click.
@@ -59,9 +66,8 @@ Served at **https://worksheet.home.tastymath.com** through the home Traefik, ove
   figure (slope from a graph, velocity-time and position-time graphs, free-body diagrams), so
   those keep their figure even when figures are turned off on the Setup page or for a section.
 - **Physics options:** g = 9.8 or 10 m/s² (stated in the problem when it's 10), and a
-  **whole-number** mode for conceptual physics with simple givens and answers. Set the
-  defaults on the Setup page; each physics section can override them. Sections added
-  from the Conceptual Physics view start with g = 10 and whole numbers.
+  **whole-number** mode with simple givens and answers. Set the defaults on the Setup
+  page; each physics section can override them.
 
 ## Why not use AI for everything?
 
@@ -71,17 +77,30 @@ testing, a 12B model wrote the right formula for a Carnot problem and then state
 
 | Source | Use it for | Answer correctness |
 |---|---|---|
-| **Built-in** (default) | Computational practice in the 44 catalog topics | Computed exactly. Always right |
+| **Built-in** (default) | The 56 catalog topics: calculation practice, and Conceptual Physics written response | Computed exactly, or written from a model answer. Always right |
 | **AI (Ollama)** | Custom topics, themed word problems, more variety | Checked by formula. Problems that fail are flagged or retried |
 
-The AI must return its given values and an arithmetic formula for the answer.
-The server evaluates that formula itself, with a sandboxed evaluator, and
-requires three things to agree: the computed value, the model's stated value, and
-the number in the answer text. In **strict mode** (the default, set on the Setup page),
-problems that fail are discarded and re-requested, up to two extra rounds. Any problem
-that still couldn't be verified is labeled in the preview: **AI ✓** (passed),
-**AI ⚠** (failed the check) or **AI ?** (not checkable, e.g. a symbolic answer).
-Hover a label for details. Labels never print.
+So the model doesn't do the arithmetic. It returns its given values, an arithmetic
+formula for the answer, and the answer text with **[[ANSWER]]** where the number goes.
+The server evaluates the formula with a sandboxed evaluator and fills the number in,
+rounded to your Setup page's significant figures (or decimal places, for math). The
+model also states its own estimate, which is compared with the formula. Labels in the
+preview: **AI ✓** (the estimate agrees), **AI ?** (the number shown is the formula's,
+but the estimate disagreed, so check the formula fits the problem; or the answer isn't
+numeric) and **AI ⚠** (a check failed). Hover a label for details. Labels never print.
+
+In **strict mode** (the default, set on the Setup page), problems whose formula can't be
+evaluated are discarded and re-requested, up to two extra rounds. Problems are requested
+five at a time, each batch with the problems so far to steer clear of, and a near-copy of
+an earlier problem (the same story with new numbers, or the same situation asked about
+again) is replaced; one is used only if the model can't come up with anything else. In a
+test with `qwen3:4b`, a 10-problem projectile section went from 3 checked answers and
+7 flagged (119 s) to none flagged, every number computed by the app (99 s). Suggesting a
+setting for each problem gave more variety but pulled that small model off the topic, so
+the model picks its own settings.
+
+AI sections in Conceptual Physics ask for written-response questions with a model
+answer instead.
 
 ## Deploy (Traefik)
 
@@ -154,11 +173,12 @@ tailnet with HTTPS, run `tailscale serve --bg 8080` and add the machine's tailne
 
 Topics live in `app/generators/`: `math_gen.py` (algebra through calculus), `math_words.py`
 (word problems), `geometry_gen.py`, `physics_gen.py`, `rotation_gen.py` (torque, rotation,
-oscillations) and `derivations.py`:
+oscillations), `derivations.py`, and `conceptual.py` (Conceptual Physics written response:
+add a `Law` to a unit's `what_if` list, or a table of settings with model answers):
 
 ```python
 topic("magnetism", "physics", "Magnetism", "Magnetic force", "Force on a current-carrying wire.",
-      courses=["conceptual"])
+      courses=["physics"])
 
 @variant("magnetism", 1, "Force on a wire")   # level 1 = easy, 2 = medium, 3 = hard; the label is the skill
 def _wire_force(ctx: Ctx) -> Problem:
@@ -204,6 +224,11 @@ and `ctx.exact_or_decimal()`, and plain decimals should use `ctx.round_note()` a
   every topic belongs to a course.
 - **Well-formed:** clean wording, g is stated exactly when it matters, whole-number mode
   delivers simple values, and every formula renders in KaTeX (`tests/test_katex.py`).
+
+Conceptual Physics is checked too: every "what happens if" answer is recomputed from an
+independent copy of its physics relation, every question asks for an explanation with at
+most three numbers in it, model answers stay short, and every level mixes at least two
+kinds of question.
 
 `tests/test_mc.py` checks multiple choice: exactly one choice is the independently checked
 answer, all four differ, wrong choices mostly come from modeled mistakes, the letters are

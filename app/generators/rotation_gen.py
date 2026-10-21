@@ -1,4 +1,4 @@
-"""AP Physics 1 rotation and oscillations (and the conceptual-physics parts of them): torque and
+"""AP Physics 1 rotation and oscillations (and the parts the Physics course shares): torque and
 static equilibrium, rotational kinematics and dynamics, rotational energy and angular momentum,
 springs and pendulums.
 
@@ -37,7 +37,7 @@ def nice_draw(ctx: Ctx, make, tries: int = 80):
 # ======================================================================== Torque
 
 topic("torque", "physics", "Torque & rotational dynamics", "Torque & equilibrium",
-      "Torque, balancing a seesaw, and static equilibrium of beams.", courses=["conceptual", "ap1"],
+      "Torque, balancing a seesaw, and static equilibrium of beams.", courses=["physics", "ap1"],
       figures=True)
 
 # who, where the force acts, lever-arm range (m), force range (N)
@@ -377,7 +377,7 @@ def _rolling_ke(ctx: Ctx) -> Problem:
 
 topic("oscillations", "physics", "Oscillations", "Springs & pendulums",
       "Period and frequency, Hooke's law, pendulum and mass-spring periods, energy in simple harmonic motion.",
-      courses=["conceptual", "ap1"], figures=True)
+      courses=["physics", "ap1"], figures=True)
 
 # what oscillates, count range, period range (s)
 OSCILLATORS = [("A pendulum completes {N} full swings", (10, 30, 1), (0.8, 3, 0.1)),

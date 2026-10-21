@@ -6,10 +6,8 @@ const DIFF = { 1: "Easy", 2: "Medium", 3: "Hard" };
 const DRAFT_KEY = "worksheet-draft-v1";
 const COURSE_KEY = "worksheet-course-filter";
 const COURSE_SHORT = { alg1: "Algebra 1", geo: "Geometry", alg2: "Algebra 2", precalc: "Precalc", calc: "Calculus",
-  conceptual: "Conceptual", ap1: "AP Physics 1" };
+  conceptual: "Conceptual", physics: "Physics", ap1: "AP Physics 1" };
 const LEVEL_LETTER = { 1: "E", 2: "M", 3: "H" };
-// Section defaults when a topic is added from a course's view of the catalog.
-const COURSE_DEFAULTS = { conceptual: { g: 10, nice: true } };
 
 const state = {
   topics: [],
@@ -203,8 +201,7 @@ function renderCatalog() {
     for (const t of topics) {
       list.append(el("button", {
         class: "topic", title: `Add a "${t.name}" section`,
-        onclick: (ev) => { addSection({ subject: t.subject, topic: t.id, course: course === "all" ? "" : course,
-          ...COURSE_DEFAULTS[course] });
+        onclick: (ev) => { addSection({ subject: t.subject, topic: t.id, course: course === "all" ? "" : course });
           ev.currentTarget.classList.add("flash");
           setTimeout(() => ev.currentTarget?.classList.remove("flash"), 600); },
       }, el("span", { class: "name" }, t.name), el("span", { class: "desc" }, t.description),
@@ -228,6 +225,11 @@ function addSection(partial) {
   renderSections();
   renderPreview();
   saveDraft();
+}
+
+/** Conceptual Physics: written-response questions with a model answer (no numbers to set up). */
+function isWritten(cfg) {
+  return !!state.topicById[cfg.topic]?.written || (cfg.topic === "custom" && cfg.subject === "physics" && cfg.course === "conceptual");
 }
 
 // Multiple choice is for AP Physics 1 only: sections added from the AP Physics 1 view, or topics
@@ -387,13 +389,13 @@ function renderSections() {
       card.append(el("label", { title: "Problems that are read off a graph or diagram always keep their figure" }, "Figures",
         seg([[true, "Show"], [false, "Hide"]], on, (v) => update({ figures: v }))));
     }
-    if (cfg.subject === "physics") {
+    if (cfg.subject === "physics" && !isWritten(cfg)) {
       // null = follow the Setup page default
       const g = cfg.g ?? state.settings.physics_g, nice = cfg.nice ?? state.settings.physics_nice;
       card.append(el("div", { class: "grid physics-opts" },
         el("label", { title: "Gravitational acceleration used in the problems" }, "g (m/s²)",
           seg([[9.8, "9.8"], [10, "10"]], g, (v) => update({ g: v }))),
-        el("label", { title: "Whole numbers: simple givens and answers, e.g. for conceptual physics" }, "Numbers",
+        el("label", { title: "Whole numbers: simple givens and answers" }, "Numbers",
           seg([[false, "Realistic"], [true, "Whole"]], nice, (v) => update({ nice: v })))));
     }
     if (cfg.source === "ai") {
@@ -540,7 +542,8 @@ function renderPreview() {
       if (s.work_space && s.work_space !== "none") prob.append(el("div", { class: `work ${s.work_space}` }));
       grid.append(prob);
 
-      const item = el("div", { class: "key-item" }, el("span", { class: "n" }, `${n}.`), mathText("div", p.answer, "a"));
+      const item = el("div", { class: "key-item" }, el("span", { class: "n" }, `${n}.`),
+        mathText("div", p.answer, isWritten(sec.config) ? "a written" : "a"));
       if (s.key_solutions && p.solution) item.append(mathText("div", p.solution, "s"));
       if (p.source === "ai" && p.verified !== true) item.append(el("div", { class: "note" }, p.check_note));
       kDiv.append(item);
@@ -747,7 +750,8 @@ async function boot() {
   $("#add-custom").onclick = () => {
     const text = $("#custom-topic-input").value.trim();
     if (!text) { $("#custom-topic-input").focus(); return; }
-    addSection({ subject: $("#custom-subject").value, topic: "custom", custom_topic: text, source: "ai" });
+    const course = state.courseFilter === "all" ? "" : state.courseFilter;  // Conceptual: written response
+    addSection({ subject: $("#custom-subject").value, topic: "custom", custom_topic: text, source: "ai", course });
     $("#custom-topic-input").value = "";
   };
   $("#custom-topic-input").onkeydown = (e) => { if (e.key === "Enter") $("#add-custom").click(); };
